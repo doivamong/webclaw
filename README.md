@@ -13,7 +13,8 @@
   <a href="https://webclaw.io"><img src="https://img.shields.io/badge/website-webclaw.io-212529?style=flat-square" alt="Website" /></a>
   <a href="https://webclaw.io/docs"><img src="https://img.shields.io/badge/docs-webclaw.io%2Fdocs-212529?style=flat-square" alt="Docs" /></a>
   <a href="https://github.com/0xMassi/webclaw/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-212529?style=flat-square" alt="License" /></a>
-  <a href="https://www.npmjs.com/package/create-webclaw"><img src="https://img.shields.io/npm/v/create-webclaw?style=flat-square&label=npx%20create-webclaw&color=212529" alt="npm" /></a>
+  <a href="https://github.com/0xMassi/webclaw/releases"><img src="https://img.shields.io/github/downloads/0xMassi/webclaw/total?style=flat-square&label=downloads&color=212529" alt="Downloads" /></a>
+  <a href="https://www.npmjs.com/package/create-webclaw"><img src="https://img.shields.io/npm/dt/create-webclaw?style=flat-square&label=npm%20installs&color=212529" alt="npm installs" /></a>
   <a href="https://github.com/0xMassi/webclaw/stargazers"><img src="https://img.shields.io/github/stars/0xMassi/webclaw?style=flat-square&color=212529" alt="Stars" /></a>
   <a href="https://discord.gg/KDfd48EpnW"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
@@ -52,14 +53,27 @@ npx create-webclaw
 
 Auto-detects your AI tools, downloads the MCP server, and configures everything. One command.
 
-### CLI
+### Homebrew (macOS/Linux)
 
 ```bash
-# From source
-git clone https://github.com/0xMassi/webclaw && cd webclaw
-cargo build --release
+brew tap 0xMassi/webclaw
+brew install webclaw
+```
 
-# Or via Docker
+### Prebuilt binaries
+
+Download from [GitHub Releases](https://github.com/0xMassi/webclaw/releases) for macOS (arm64, x86_64) and Linux (x86_64, aarch64).
+
+### Cargo (from source)
+
+```bash
+cargo install --git https://github.com/0xMassi/webclaw.git webclaw-cli
+cargo install --git https://github.com/0xMassi/webclaw.git webclaw-mcp
+```
+
+### Docker
+
+```bash
 docker run --rm ghcr.io/0xmassi/webclaw https://example.com
 ```
 
