@@ -3,6 +3,16 @@
 All notable changes to webclaw are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.5] — 2026-03-26
+
+### Added
+- `--output-dir`: save each page to a separate file instead of stdout. Works with single URL, crawl, and batch modes
+- CSV input with custom filenames: `url,filename` format in `--urls-file`
+- Root URLs use `hostname/index.ext` to avoid collisions in batch mode
+- Subdirectories created automatically from URL path structure
+
+---
+
 ## [0.1.4] — 2026-03-26
 
 ### Added

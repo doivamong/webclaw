@@ -4,7 +4,7 @@
 mod cloud;
 
 use std::io::{self, Read as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -245,6 +245,12 @@ struct Cli {
     /// Force all requests through the cloud API (skip local extraction)
     #[arg(long)]
     cloud: bool,
+
+    /// Output directory: save each page to a separate file instead of stdout.
+    /// Works with --crawl, batch (multiple URLs), and single URL mode.
+    /// Filenames are derived from URL paths (e.g. /docs/api -> docs/api.md).
+    #[arg(long)]
+    output_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -384,22 +390,117 @@ fn normalize_url(url: &str) -> String {
     }
 }
 
+/// Derive a filename from a URL for `--output-dir`.
+///
+/// Strips the scheme/host, maps the path to a filesystem path, and appends
+/// an extension matching the output format.
+fn url_to_filename(raw_url: &str, format: &OutputFormat) -> String {
+    let ext = match format {
+        OutputFormat::Markdown | OutputFormat::Llm => "md",
+        OutputFormat::Json => "json",
+        OutputFormat::Text => "txt",
+    };
+
+    let parsed = url::Url::parse(raw_url);
+    let (host, path, query) = match &parsed {
+        Ok(u) => (
+            u.host_str().unwrap_or("unknown").to_string(),
+            u.path().to_string(),
+            u.query().map(String::from),
+        ),
+        Err(_) => (String::new(), String::new(), None),
+    };
+
+    let mut stem = path.trim_matches('/').to_string();
+    if stem.is_empty() {
+        // Use hostname for root URLs to avoid collisions in batch mode
+        let clean_host = host.strip_prefix("www.").unwrap_or(&host);
+        stem = format!("{}/index", clean_host.replace('.', "_"));
+    }
+
+    // Append query params so /p?id=123 doesn't collide with /p?id=456
+    if let Some(q) = query {
+        stem = format!("{stem}_{q}");
+    }
+
+    // Sanitize: keep alphanumeric, dash, underscore, dot, slash
+    let sanitized: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | '/') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    format!("{sanitized}.{ext}")
+}
+
+/// Write extraction output to a file inside `dir`, creating parent dirs as needed.
+fn write_to_file(dir: &Path, filename: &str, content: &str) -> Result<(), String> {
+    let dest = dir.join(filename);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create directory {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&dest, content)
+        .map_err(|e| format!("failed to write {}: {e}", dest.display()))?;
+    let word_count = content.split_whitespace().count();
+    eprintln!("Saved: {} ({word_count} words)", dest.display());
+    Ok(())
+}
+
+/// Format an `ExtractionResult` into a string for the given output format.
+fn format_output(result: &ExtractionResult, format: &OutputFormat, show_metadata: bool) -> String {
+    match format {
+        OutputFormat::Markdown => {
+            let mut out = String::new();
+            if show_metadata {
+                out.push_str(&format_frontmatter(&result.metadata));
+            }
+            out.push_str(&result.content.markdown);
+            out
+        }
+        OutputFormat::Json => serde_json::to_string_pretty(result).expect("serialization failed"),
+        OutputFormat::Text => result.content.plain_text.clone(),
+        OutputFormat::Llm => to_llm_text(result, result.metadata.url.as_deref()),
+    }
+}
+
 /// Collect all URLs from positional args + --urls-file, normalizing bare domains.
-fn collect_urls(cli: &Cli) -> Result<Vec<String>, String> {
-    let mut urls: Vec<String> = cli.urls.iter().map(|u| normalize_url(u)).collect();
+///
+/// Returns `(url, optional_custom_filename)` pairs. Custom filenames come from
+/// CSV-style lines in `--urls-file`: `url,filename`. Plain lines (no comma) get
+/// `None` so the caller auto-generates the filename from the URL.
+fn collect_urls(cli: &Cli) -> Result<Vec<(String, Option<String>)>, String> {
+    let mut entries: Vec<(String, Option<String>)> =
+        cli.urls.iter().map(|u| (normalize_url(u), None)).collect();
 
     if let Some(ref path) = cli.urls_file {
         let content =
             std::fs::read_to_string(path).map_err(|e| format!("failed to read {path}: {e}"))?;
         for line in content.lines() {
             let trimmed = line.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                urls.push(normalize_url(trimmed));
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((url_part, name_part)) = trimmed.split_once(',') {
+                let name = name_part.trim();
+                let custom = if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                };
+                entries.push((normalize_url(url_part.trim()), custom));
+            } else {
+                entries.push((normalize_url(trimmed), None));
             }
         }
     }
 
-    Ok(urls)
+    Ok(entries)
 }
 
 /// Result that can be either a local extraction or a cloud API JSON response.
@@ -1050,7 +1151,20 @@ async fn run_crawl(cli: &Cli) -> Result<(), String> {
         }
     }
 
-    print_crawl_output(&result, &cli.format, cli.metadata);
+    if let Some(ref dir) = cli.output_dir {
+        let mut saved = 0usize;
+        for page in &result.pages {
+            if let Some(ref extraction) = page.extraction {
+                let filename = url_to_filename(&page.url, &cli.format);
+                let content = format_output(extraction, &cli.format, cli.metadata);
+                write_to_file(dir, &filename, &content)?;
+                saved += 1;
+            }
+        }
+        eprintln!("Saved {saved} files to {}", dir.display());
+    } else {
+        print_crawl_output(&result, &cli.format, cli.metadata);
+    }
 
     eprintln!(
         "Crawled {} pages ({} ok, {} errors) in {:.1}s",
@@ -1092,15 +1206,13 @@ async fn run_map(cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
-async fn run_batch(cli: &Cli, urls: &[String]) -> Result<(), String> {
+async fn run_batch(cli: &Cli, entries: &[(String, Option<String>)]) -> Result<(), String> {
     let client = Arc::new(
         FetchClient::new(build_fetch_config(cli)).map_err(|e| format!("client error: {e}"))?,
     );
 
-    let url_refs: Vec<&str> = urls.iter().map(String::as_str).collect();
-    let results = client
-        .fetch_and_extract_batch(&url_refs, cli.concurrency)
-        .await;
+    let urls: Vec<&str> = entries.iter().map(|(u, _)| u.as_str()).collect();
+    let results = client.fetch_and_extract_batch(&urls, cli.concurrency).await;
 
     let ok = results.iter().filter(|r| r.result.is_ok()).count();
     let errors = results.len() - ok;
@@ -1117,7 +1229,29 @@ async fn run_batch(cli: &Cli, urls: &[String]) -> Result<(), String> {
         }
     }
 
-    print_batch_output(&results, &cli.format, cli.metadata);
+    // Build a lookup of custom filenames by URL
+    let custom_names: std::collections::HashMap<&str, &str> = entries
+        .iter()
+        .filter_map(|(url, name)| name.as_deref().map(|n| (url.as_str(), n)))
+        .collect();
+
+    if let Some(ref dir) = cli.output_dir {
+        let mut saved = 0usize;
+        for r in &results {
+            if let Ok(ref extraction) = r.result {
+                let filename = custom_names
+                    .get(r.url.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| url_to_filename(&r.url, &cli.format));
+                let content = format_output(extraction, &cli.format, cli.metadata);
+                write_to_file(dir, &filename, &content)?;
+                saved += 1;
+            }
+        }
+        eprintln!("Saved {saved} files to {}", dir.display());
+    } else {
+        print_batch_output(&results, &cli.format, cli.metadata);
+    }
 
     eprintln!(
         "Fetched {} URLs ({} ok, {} errors)",
@@ -1330,7 +1464,7 @@ async fn main() {
     }
 
     // Collect all URLs from args + --urls-file
-    let urls = match collect_urls(&cli) {
+    let entries = match collect_urls(&cli) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1339,8 +1473,8 @@ async fn main() {
     };
 
     // Multi-URL batch mode
-    if urls.len() > 1 {
-        if let Err(e) = run_batch(&cli, &urls).await {
+    if entries.len() > 1 {
+        if let Err(e) = run_batch(&cli, &entries).await {
             eprintln!("error: {e}");
             process::exit(1);
         }
@@ -1362,7 +1496,22 @@ async fn main() {
     // Single-page extraction (handles both HTML and PDF via content-type detection)
     match fetch_and_extract(&cli).await {
         Ok(FetchOutput::Local(result)) => {
-            print_output(&result, &cli.format, cli.metadata);
+            if let Some(ref dir) = cli.output_dir {
+                let url = cli
+                    .urls
+                    .first()
+                    .map(|u| normalize_url(u))
+                    .unwrap_or_default();
+                let custom_name = entries.first().and_then(|(_, name)| name.clone());
+                let filename = custom_name.unwrap_or_else(|| url_to_filename(&url, &cli.format));
+                let content = format_output(&result, &cli.format, cli.metadata);
+                if let Err(e) = write_to_file(dir, &filename, &content) {
+                    eprintln!("error: {e}");
+                    process::exit(1);
+                }
+            } else {
+                print_output(&result, &cli.format, cli.metadata);
+            }
         }
         Ok(FetchOutput::Cloud(resp)) => {
             print_cloud_output(&resp, &cli.format);
@@ -1371,5 +1520,100 @@ async fn main() {
             eprintln!("{e}");
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_to_filename_root() {
+        assert_eq!(
+            url_to_filename("https://example.com/", &OutputFormat::Markdown),
+            "example_com/index.md"
+        );
+        assert_eq!(
+            url_to_filename("https://example.com", &OutputFormat::Markdown),
+            "example_com/index.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_path() {
+        assert_eq!(
+            url_to_filename("https://example.com/docs/api", &OutputFormat::Markdown),
+            "docs/api.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_trailing_slash() {
+        assert_eq!(
+            url_to_filename("https://example.com/docs/api/", &OutputFormat::Markdown),
+            "docs/api.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_nested_path() {
+        assert_eq!(
+            url_to_filename("https://example.com/blog/my-post", &OutputFormat::Markdown),
+            "blog/my-post.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_query_params() {
+        assert_eq!(
+            url_to_filename("https://example.com/p?id=123", &OutputFormat::Markdown),
+            "p_id_123.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_json_format() {
+        assert_eq!(
+            url_to_filename("https://example.com/docs/api", &OutputFormat::Json),
+            "docs/api.json"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_text_format() {
+        assert_eq!(
+            url_to_filename("https://example.com/docs/api", &OutputFormat::Text),
+            "docs/api.txt"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_llm_format() {
+        assert_eq!(
+            url_to_filename("https://example.com/docs/api", &OutputFormat::Llm),
+            "docs/api.md"
+        );
+    }
+
+    #[test]
+    fn url_to_filename_special_chars() {
+        // Spaces and special chars get replaced with underscores
+        assert_eq!(
+            url_to_filename(
+                "https://example.com/path%20with%20spaces",
+                &OutputFormat::Markdown
+            ),
+            "path_20with_20spaces.md"
+        );
+    }
+
+    #[test]
+    fn write_to_file_creates_dirs() {
+        let dir = std::env::temp_dir().join("webclaw_test_output_dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        write_to_file(&dir, "nested/deep/file.md", "hello").unwrap();
+        let content = std::fs::read_to_string(dir.join("nested/deep/file.md")).unwrap();
+        assert_eq!(content, "hello");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
