@@ -22,8 +22,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
 
-# primp requires patched forks with TLS impersonation support
+# primp requires patched forks with TLS impersonation support.
+# Must mirror all patches from primp's own Cargo.toml.
 [patch.crates-io]
+reqwest = { git = "https://github.com/deedy5/primp", subdirectory = "crates/primp-reqwest" }
 rustls = { git = "https://github.com/deedy5/primp", subdirectory = "crates/primp-rustls/rustls" }
 h2 = { git = "https://github.com/deedy5/primp", subdirectory = "crates/primp-h2" }
 hyper = { git = "https://github.com/deedy5/primp", subdirectory = "crates/primp-hyper" }
