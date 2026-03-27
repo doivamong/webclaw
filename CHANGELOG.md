@@ -3,6 +3,17 @@
 All notable changes to webclaw are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] — 2026-03-27
+
+### Added
+- **Docker image on GHCR**: `docker run ghcr.io/0xmassi/webclaw` — auto-built on every release
+- **QuickJS data island extraction**: inline `<script>` execution catches `window.__PRELOADED_STATE__`, Next.js hydration data, and other JS-embedded content
+
+### Fixed
+- Docker CI now runs as part of the release workflow (was missing, image was never published)
+
+---
+
 ## [0.2.0] — 2026-03-26
 
 ### Added

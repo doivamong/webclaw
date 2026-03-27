@@ -3108,7 +3108,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "dotenvy",
@@ -3128,7 +3128,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ego-tree",
  "once_cell",
@@ -3146,7 +3146,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-fetch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "calamine",
  "primp",
@@ -3166,7 +3166,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-llm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -3179,7 +3179,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-mcp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "dotenvy",
  "reqwest",
@@ -3199,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "webclaw-pdf"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "pdf-extract",
  "thiserror",
