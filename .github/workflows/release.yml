@@ -121,12 +121,13 @@ jobs:
       - name: Download release binaries
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          tarball="webclaw-${tag}-${{ matrix.binary_target }}.tar.gz"
+          dir="webclaw-${tag}-${{ matrix.binary_target }}"
+          tarball="${dir}.tar.gz"
           curl -sSL "https://github.com/0xMassi/webclaw/releases/download/${tag}/${tarball}" -o release.tar.gz
           tar xzf release.tar.gz
           mkdir -p binaries
-          find . -name 'webclaw' -not -name 'webclaw-mcp' -path '*/webclaw-*/' -exec cp {} binaries/webclaw \;
-          find . -name 'webclaw-mcp' -exec cp {} binaries/webclaw-mcp \;
+          cp "${dir}/webclaw" binaries/webclaw
+          cp "${dir}/webclaw-mcp" binaries/webclaw-mcp
           chmod +x binaries/*
           ls -la binaries/
 
