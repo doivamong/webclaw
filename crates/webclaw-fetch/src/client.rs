@@ -88,9 +88,7 @@ enum ClientPool {
     },
     /// Pre-built pool of clients, each with a different proxy + fingerprint.
     /// Requests pick a client deterministically by host for HTTP/2 connection reuse.
-    Rotating {
-        clients: Vec<webclaw_http::Client>,
-    },
+    Rotating { clients: Vec<webclaw_http::Client> },
 }
 
 /// HTTP client with browser TLS + HTTP/2 fingerprinting via webclaw-http.
@@ -446,10 +444,7 @@ fn extract_host(url: &str) -> String {
 
 /// Pick a client deterministically based on a host string.
 /// Same host always gets the same client, enabling HTTP/2 connection reuse.
-fn pick_for_host<'a>(
-    clients: &'a [webclaw_http::Client],
-    host: &str,
-) -> &'a webclaw_http::Client {
+fn pick_for_host<'a>(clients: &'a [webclaw_http::Client], host: &str) -> &'a webclaw_http::Client {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     host.hash(&mut hasher);
     let idx = (hasher.finish() as usize) % clients.len();
@@ -489,7 +484,9 @@ fn build_client(
             .map_err(|e| FetchError::Build(format!("proxy: {e}")))?;
     }
 
-    builder.build().map_err(|e| FetchError::Build(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| FetchError::Build(e.to_string()))
 }
 
 /// Status codes worth retrying: server errors + rate limiting.
