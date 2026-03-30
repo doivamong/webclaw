@@ -950,7 +950,7 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.4.13"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1050,7 +1050,7 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 [[package]]
 name = "hyper"
 version = "1.8.1"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1090,7 +1090,7 @@ dependencies = [
 [[package]]
 name = "hyper-util"
 version = "0.1.20"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "base64",
  "bytes",
@@ -2024,7 +2024,7 @@ dependencies = [
 [[package]]
 name = "reqwest"
 version = "0.13.2"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "base64",
  "bytes",
@@ -2158,7 +2158,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.37"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "aws-lc-rs",
  "brotli",
@@ -3132,7 +3132,7 @@ dependencies = [
 [[package]]
 name = "webclaw-http"
 version = "0.1.1"
-source = "git+https://github.com/0xMassi/webclaw-tls#e173a4ca9943b6ed103657e806ed6b57fa1d3751"
+source = "git+https://github.com/0xMassi/webclaw-tls#a9d7292cf15fc6809e6388080c9c40a05a626d17"
 dependencies = [
  "bytes",
  "h2",
