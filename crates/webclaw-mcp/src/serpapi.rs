@@ -173,10 +173,45 @@ fn format_results(data: &Value) -> Result<String, String> {
         }
     }
 
-    // Append answer box if present
+    // Append answer box if present (title + snippet + link)
     if let Some(answer) = data.get("answer_box") {
+        output.push_str("--- Answer Box ---\n");
+        if let Some(title) = answer.get("title").and_then(|v| v.as_str()) {
+            output.push_str(&format!("{title}\n"));
+        }
         if let Some(snippet) = answer.get("snippet").and_then(|v| v.as_str()) {
-            output.push_str(&format!("--- Answer Box ---\n{}\n\n", snippet));
+            output.push_str(&format!("{snippet}\n"));
+        } else if let Some(answer_text) = answer.get("answer").and_then(|v| v.as_str()) {
+            output.push_str(&format!("{answer_text}\n"));
+        }
+        if let Some(link) = answer.get("link").and_then(|v| v.as_str()) {
+            output.push_str(&format!("Source: {link}\n"));
+        }
+        output.push('\n');
+    }
+
+    // Append knowledge graph if present
+    if let Some(kg) = data.get("knowledge_graph") {
+        let title = kg.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        let desc = kg.get("description").and_then(|v| v.as_str()).unwrap_or("");
+        if !title.is_empty() || !desc.is_empty() {
+            output.push_str(&format!("--- Knowledge Graph ---\n{title}\n{desc}\n\n"));
+        }
+    }
+
+    // Append related questions if present
+    if let Some(related) = data.get("related_questions").and_then(|v| v.as_array()) {
+        if !related.is_empty() {
+            output.push_str("--- Related Questions ---\n");
+            for q in related.iter().take(3) {
+                if let Some(question) = q.get("question").and_then(|v| v.as_str()) {
+                    output.push_str(&format!("• {question}\n"));
+                    if let Some(snippet) = q.get("snippet").and_then(|v| v.as_str()) {
+                        output.push_str(&format!("  {}\n", &snippet[..snippet.len().min(150)]));
+                    }
+                }
+            }
+            output.push('\n');
         }
     }
 
