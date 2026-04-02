@@ -93,9 +93,9 @@ Output:
 | `diff` | So sánh snapshot trước/sau | Local, free |
 | `brand` | Extract colors, fonts, logo, favicon | Local, free |
 | `search` | Web search (Google results via SerpAPI) | `SERPAPI_KEY` |
-| `research` | Deep research multi-source | `WEBCLAW_API_KEY` |
+| `research` | Deep research: search → fetch → LLM synthesis | `SERPAPI_KEY` + Ollama |
 
-**9/10 tools chạy local** — chỉ `research` cần cloud API key.
+**10/10 tools chạy local** — không cần `WEBCLAW_API_KEY`.
 
 ---
 
@@ -104,11 +104,12 @@ Output:
 | Variable | Mô tả | Bắt buộc? |
 |----------|-------|-----------|
 | `OLLAMA_HOST` | Ollama URL (default: `http://localhost:11434`) | Không (auto-detect) |
-| `SERPAPI_KEY` | SerpAPI key(s) cho search — hỗ trợ comma-separated multi-key | Không (search sẽ disabled) |
-| `WEBCLAW_API_KEY` | Cloud API cho bot bypass + research | Không |
+| `OLLAMA_RESEARCH_MODEL` | Model cho research synthesis (default: `deepseek-v3.1:671b-cloud`) | Không |
+| `SERPAPI_KEY` | SerpAPI key(s) cho search/research — hỗ trợ comma-separated multi-key | Không (search/research disabled) |
+| `WEBCLAW_API_KEY` | Cloud API cho bot bypass (fallback) | Không |
 | `WEBCLAW_PROXY` | Single proxy URL | Không |
 
-> **Không dùng OpenAI** — LLM provider chain: Ollama (chính) → Anthropic (fallback).
+> **Không dùng OpenAI.** LLM chain: Ollama (chính) → Claude Code tự tổng hợp (khi Ollama down).
 
 ---
 
