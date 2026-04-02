@@ -8,7 +8,7 @@
 |----------|--------|-------|
 | **Windows HTTPS fix** | `80307d3` | Thêm `webpki-roots` feature cho wreq — BoringSSL trên Windows không tìm được system cert store |
 | **Turnstile false positive** | `80307d3` | Nâng threshold `challenge-platform` detection lên 50KB — tránh nhầm Cloudflare Turnstile widget (contact form) là bot challenge |
-| **SerpAPI search** | `9a783c7` | Search tool dùng SerpAPI (Google results) khi không có `WEBCLAW_API_KEY` — 250 query/tháng free |
+| **SerpAPI search** | `9a783c7` | Search tool dùng SerpAPI (Google results) khi không có `WEBCLAW_API_KEY` — 250 query/tháng/free account, scale bằng multi-key |
 | **Multi-key rotation** | `330e395` | `SERPAPI_KEY` hỗ trợ comma-separated nhiều keys. Check quota qua Account API trước mỗi search, auto-switch khi hết |
 | **Summarize cho small models** | `2c58d7d` | Truncate input 4000 chars, prompt mạnh hơn (cấm markdown/code), max_tokens cap, Ollama pass `num_predict` |
 | **Local research pipeline** | `8350746` | search → batch fetch 5-10 URLs → Ollama synthesis (DeepSeek 671B). Fallback: trả raw sources cho Claude Code tự tổng hợp |
@@ -135,8 +135,10 @@ Output:
 | **Claude synthesis cần?** | Không | Có | webclaw trả kết quả dùng ngay |
 | **Answer box/KG** | Có (SerpAPI) | Có (built-in) | Ngang nhau |
 | **Niche query (Q3)** | 4/10 relevant | **5/10 + synthesis** | WebSearch tốt hơn cho niche |
-| **Quota** | 500/tháng (2 keys) | Không giới hạn | WebSearch linh hoạt hơn |
-| **Chi phí** | 1 SerpAPI query | Included in plan | WebSearch miễn phí |
+| **Quota** | 250/tháng/key (scale N keys) | Giới hạn bởi plan token budget | webclaw quota rõ ràng, scale được |
+| **Chi phí** | $0 (free accounts) | Tốn token từ plan ($20–200/mo) | WebSearch ẩn chi phí vào token budget |
+
+> **Lưu ý chi phí WebSearch:** WebSearch không miễn phí — mỗi search inject 500–1000+ tokens kết quả vào context, tích lũy qua các turn, tiêu hao chung budget với code/chat. Plan Pro ($20/mo) có ~44K tokens/5h window — heavy search hết quota nhanh hơn đáng kể. webclaw search chi phí $0 thực sự (SerpAPI free accounts), quota minh bạch (biết chính xác còn bao nhiêu), và scale bằng cách thêm free accounts (N keys × 250 queries/tháng).
 
 **Chi tiết 3 queries:**
 
@@ -156,8 +158,8 @@ Q3: "wreq BoringSSL webpki-roots Windows TLS fix 2026" (EN, niche)
 
 **Kết luận search:**
 - webclaw thắng ở **tốc độ, snippet quality, token efficiency, tiếng Việt**
-- WebSearch thắng ở **niche queries (Claude synthesis), không giới hạn quota**
-- Chiến lược tối ưu: webclaw cho research/kỹ thuật, WebSearch cho niche/unlimited
+- WebSearch thắng ở **niche queries (Claude synthesis)** nhưng tốn token plan, không thực sự miễn phí
+- Chiến lược tối ưu: webclaw cho phần lớn use cases (chi phí $0, quota scale được), WebSearch cho niche queries khi cần Claude synthesis
 
 ### Research: `webclaw.research` vs Claude Code (WebSearch + 5× WebFetch)
 
@@ -189,7 +191,7 @@ TỔNG                 151K tokens          536K tokens            72%
 | Điểm yếu webclaw | Mức độ | Workaround |
 |-------------------|--------|------------|
 | Niche query relevance thấp hơn | Nhẹ | Dùng WebSearch cho niche queries |
-| SerpAPI quota 500/tháng | Trung bình | Thêm free accounts, hoặc fallback WebSearch |
+| SerpAPI quota 250/tháng/key | Nhẹ | Multi-account rotation (N keys × 250/tháng), chi phí $0 |
 | Không có Claude synthesis | Nhẹ | Claude Code tự tổng hợp từ raw results |
 | SerpAPI down → search fail | Thấp | Fallback WebSearch tự động |
 
