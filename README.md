@@ -11,6 +11,7 @@
 | **SerpAPI search** | `9a783c7` | Search tool dùng SerpAPI (Google results) khi không có `WEBCLAW_API_KEY` — 250 query/tháng free |
 | **Multi-key rotation** | `330e395` | `SERPAPI_KEY` hỗ trợ comma-separated nhiều keys. Check quota qua Account API trước mỗi search, auto-switch khi hết |
 | **Summarize cho small models** | `2c58d7d` | Truncate input 4000 chars, prompt mạnh hơn (cấm markdown/code), max_tokens cap, Ollama pass `num_predict` |
+| **Local research pipeline** | `8350746` | search → batch fetch 5-10 URLs → Ollama synthesis (DeepSeek 671B). Fallback: trả raw sources cho Claude Code tự tổng hợp |
 
 ## Cài đặt trên Windows
 
@@ -52,7 +53,8 @@ Output:
       "args": [],
       "env": {
         "OLLAMA_HOST": "http://localhost:11434",
-        "SERPAPI_KEY": "key1,key2,key3"
+        "SERPAPI_KEY": "key1,key2,key3",
+        "OLLAMA_RESEARCH_MODEL": "deepseek-v3.1:671b-cloud"
       }
     }
   }
@@ -71,7 +73,8 @@ Output:
       "args": [],
       "env": {
         "OLLAMA_HOST": "http://localhost:11434",
-        "SERPAPI_KEY": "key1,key2,key3"
+        "SERPAPI_KEY": "key1,key2,key3",
+        "OLLAMA_RESEARCH_MODEL": "deepseek-v3.1:671b-cloud"
       }
     }
   }
