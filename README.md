@@ -13,6 +13,8 @@
 | **Summarize cho small models** | `2c58d7d` | Truncate input 4000 chars, prompt mạnh hơn (cấm markdown/code), max_tokens cap, Ollama pass `num_predict` |
 | **Local research pipeline** | `8350746` | search → batch fetch 5-10 URLs → Ollama synthesis (DeepSeek 671B). Fallback: trả raw sources cho Claude Code tự tổng hợp |
 | **Enriched search output** | `2d73c36` | Thêm answer box (title+snippet+link), knowledge graph, related questions từ SerpAPI response |
+| **Locale-aware search** | `6b23b6b` | Auto-detect ngôn ngữ query (vi/zh/ja/ko/en) → set hl/gl/lr params Google. Quota cache 5 phút. Recency filter (day/week/month/year). Tốc độ 8s (trước 15.7s), relevance 8.7/10 (trước 7.7/10) |
+| **Tool routing guidance** | `aad7c42` | MCP server instructions + CLAUDE.md hướng dẫn Claude Code ưu tiên webclaw tools thay vì WebSearch/WebFetch |
 
 ## Cài đặt trên Windows
 
@@ -96,7 +98,7 @@ Output:
 | `summarize` | Tóm tắt trang (tuân thủ max_sentences) | Ollama |
 | `diff` | So sánh snapshot trước/sau | Local, free |
 | `brand` | Extract colors, fonts, logo, favicon | Local, free |
-| `search` | Web search (Google results via SerpAPI) | `SERPAPI_KEY` |
+| `search` | Web search (Google via SerpAPI) — locale-aware, answer box, KG, recency filter | `SERPAPI_KEY` |
 | `research` | Deep research: search → fetch → LLM synthesis | `SERPAPI_KEY` + Ollama |
 
 **10/10 tools chạy local** — không cần `WEBCLAW_API_KEY`.
