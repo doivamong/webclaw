@@ -18,6 +18,7 @@ use url::Url;
 use crate::cloud::{self, CloudClient, SmartFetchResult};
 use crate::serpapi::SerpApiClient;
 use crate::tools::*;
+use webclaw_llm::provider::LlmProvider;
 
 pub struct WebclawMcp {
     tool_router: ToolRouter<Self>,
@@ -505,10 +506,119 @@ impl WebclawMcp {
         &self,
         Parameters(params): Parameters<ResearchParams>,
     ) -> Result<String, String> {
+        // Priority 1: Local research (SerpAPI search → batch fetch → LLM synthesis)
+        if let Some(ref serpapi) = self.serpapi {
+            let num = if params.deep.unwrap_or(false) { 10 } else { 5 };
+            info!(query = %params.query, num, "local research: searching via SerpAPI");
+
+            let search_results = serpapi.search_urls(&params.query, num).await?;
+            if search_results.is_empty() {
+                return Ok(format!("No sources found for: {}", params.query));
+            }
+
+            // Batch fetch URLs with timeout
+            let urls: Vec<&str> = search_results.iter().map(|r| r.url.as_str()).collect();
+            info!(count = urls.len(), "local research: fetching sources");
+
+            let options = webclaw_core::ExtractionOptions {
+                only_main_content: true,
+                ..Default::default()
+            };
+            let batch = tokio::time::timeout(
+                Duration::from_secs(30),
+                self.fetch_client.fetch_and_extract_batch_with_options(&urls, 5, &options),
+            )
+            .await
+            .map_err(|_| "Research fetch timed out after 30s".to_string())?;
+
+            // Build source content (truncate each page to ~800 chars)
+            let mut sources = String::new();
+            for (i, entry) in batch.iter().enumerate() {
+                let sr = &search_results[i];
+                sources.push_str(&format!("[{}] {} — {}\n", i + 1, sr.title, sr.url));
+                match &entry.result {
+                    Ok(extraction) => {
+                        let content = &extraction.content.markdown;
+                        let truncated = if content.len() > 800 {
+                            let boundary = content[..800]
+                                .rfind(|c: char| c == '.' || c == '\n')
+                                .unwrap_or(800);
+                            &content[..boundary]
+                        } else {
+                            content.as_str()
+                        };
+                        sources.push_str(truncated);
+                    }
+                    Err(_) => {
+                        sources.push_str(&sr.snippet);
+                    }
+                }
+                sources.push_str("\n---\n");
+            }
+
+            // LLM synthesis (Ollama → fallback chain)
+            if let Some(ref chain) = self.llm_chain {
+                let research_model = std::env::var("OLLAMA_RESEARCH_MODEL")
+                    .unwrap_or_default();
+                let topic_hint = params
+                    .topic
+                    .as_deref()
+                    .map(|t| format!("\nTopic focus: {t}"))
+                    .unwrap_or_default();
+
+                let system = format!(
+                    "You are a research analyst producing structured reports.\n\
+                     RULES:\n\
+                     - Synthesize information from ALL provided sources\n\
+                     - Cite sources as [1], [2], etc. matching the source numbers\n\
+                     - Structure: Overview → Key Findings → Details → Sources list\n\
+                     - Be factual — only state what sources support\n\
+                     - If sources conflict, note the disagreement\n\
+                     - Match the query language (Vietnamese query → Vietnamese report)\n\
+                     - No filler phrases{topic_hint}"
+                );
+
+                let request = webclaw_llm::provider::CompletionRequest {
+                    model: research_model,
+                    messages: vec![
+                        webclaw_llm::provider::Message {
+                            role: "system".into(),
+                            content: system,
+                        },
+                        webclaw_llm::provider::Message {
+                            role: "user".into(),
+                            content: format!(
+                                "Research query: {}\n\nSources:\n{}",
+                                params.query, sources
+                            ),
+                        },
+                    ],
+                    temperature: Some(0.3),
+                    max_tokens: Some(2000),
+                    json_mode: false,
+                };
+
+                info!("local research: synthesizing report via LLM");
+                match chain.complete(&request).await {
+                    Ok(report) => return Ok(report),
+                    Err(e) => {
+                        warn!(error = %e, "LLM synthesis failed, returning raw sources");
+                    }
+                }
+            }
+
+            // Fallback: return raw sources (Claude Code will synthesize)
+            return Ok(format!(
+                "Research sources for: {}\n\n{}",
+                params.query, sources
+            ));
+        }
+
+        // Priority 2: Cloud research (existing logic)
         let cloud = self
             .cloud
             .as_ref()
-            .ok_or("Research requires WEBCLAW_API_KEY. Get a key at https://webclaw.io")?;
+            .ok_or("Research requires SERPAPI_KEY (local) or WEBCLAW_API_KEY (cloud).")?;
 
         let mut body = json!({ "query": params.query });
         if let Some(deep) = params.deep {
@@ -518,7 +628,6 @@ impl WebclawMcp {
             body["topic"] = json!(topic);
         }
 
-        // Start the research job
         let start_resp = cloud.post("research", body).await?;
         let job_id = start_resp
             .get("id")
@@ -528,7 +637,6 @@ impl WebclawMcp {
 
         info!(job_id = %job_id, "research job started, polling for completion");
 
-        // Poll until completed or failed, with a max iteration cap (~10 minutes)
         for poll in 0..RESEARCH_MAX_POLLS {
             tokio::time::sleep(Duration::from_secs(3)).await;
 

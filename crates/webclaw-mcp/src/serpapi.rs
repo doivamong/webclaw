@@ -9,6 +9,13 @@ use tracing::{info, warn};
 const SEARCH_URL: &str = "https://serpapi.com/search.json";
 const ACCOUNT_URL: &str = "https://serpapi.com/account.json";
 
+/// Structured search result for research pipeline.
+pub struct SearchResult {
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+}
+
 /// SerpAPI client with multi-key rotation.
 pub struct SerpApiClient {
     keys: Vec<String>,
@@ -71,8 +78,8 @@ impl SerpApiClient {
         None
     }
 
-    /// Search Google via SerpAPI with auto key rotation.
-    pub async fn search(&self, query: &str, num_results: Option<u32>) -> Result<String, String> {
+    /// Raw SerpAPI call. Returns parsed JSON.
+    async fn raw_search(&self, query: &str, num: u32) -> Result<Value, String> {
         let (idx, key) = self
             .pick_key()
             .await
@@ -82,8 +89,6 @@ impl SerpApiClient {
                     self.keys.len()
                 )
             })?;
-
-        let num = num_results.unwrap_or(10).min(20);
 
         let resp = self
             .http
@@ -107,29 +112,65 @@ impl SerpApiClient {
             ));
         }
 
-        let data: Value = resp
-            .json()
+        resp.json()
             .await
-            .map_err(|e| format!("SerpAPI parse failed: {e}"))?;
+            .map_err(|e| format!("SerpAPI parse failed: {e}"))
+    }
 
+    /// Search and return formatted text (for search tool).
+    pub async fn search(&self, query: &str, num_results: Option<u32>) -> Result<String, String> {
+        let data = self.raw_search(query, num_results.unwrap_or(10).min(20)).await?;
         format_results(&data)
     }
+
+    /// Search and return structured results (for research pipeline).
+    pub async fn search_urls(&self, query: &str, num: u32) -> Result<Vec<SearchResult>, String> {
+        let data = self.raw_search(query, num).await?;
+        Ok(parse_results(&data))
+    }
+}
+
+/// Parse organic results into structured SearchResult vec.
+fn parse_results(data: &Value) -> Vec<SearchResult> {
+    data.get("organic_results")
+        .and_then(|v| v.as_array())
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    Some(SearchResult {
+                        title: r.get("title")?.as_str()?.to_string(),
+                        url: r.get("link")?.as_str()?.to_string(),
+                        snippet: r
+                            .get("snippet")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Format SerpAPI response into readable text.
 fn format_results(data: &Value) -> Result<String, String> {
+    let results = parse_results(data);
     let mut output = String::new();
 
-    if let Some(results) = data.get("organic_results").and_then(|v| v.as_array()) {
-        output.push_str(&format!("Found {} results:\n\n", results.len()));
-        for (i, result) in results.iter().enumerate() {
-            let title = result.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let url = result.get("link").and_then(|v| v.as_str()).unwrap_or("");
-            let snippet = result.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-            output.push_str(&format!("{}. {}\n   {}\n   {}\n\n", i + 1, title, url, snippet));
-        }
-    } else {
+    if results.is_empty() {
         output.push_str("No results found.\n");
+    } else {
+        output.push_str(&format!("Found {} results:\n\n", results.len()));
+        for (i, r) in results.iter().enumerate() {
+            output.push_str(&format!(
+                "{}. {}\n   {}\n   {}\n\n",
+                i + 1,
+                r.title,
+                r.url,
+                r.snippet
+            ));
+        }
     }
 
     // Append answer box if present
