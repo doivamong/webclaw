@@ -16,6 +16,7 @@ use tracing::{error, info, warn};
 use url::Url;
 
 use crate::cloud::{self, CloudClient, SmartFetchResult};
+use crate::serpapi::SerpApiClient;
 use crate::tools::*;
 
 pub struct WebclawMcp {
@@ -23,6 +24,7 @@ pub struct WebclawMcp {
     fetch_client: Arc<webclaw_fetch::FetchClient>,
     llm_chain: Option<webclaw_llm::ProviderChain>,
     cloud: Option<CloudClient>,
+    serpapi: Option<SerpApiClient>,
 }
 
 /// Parse a browser string into a BrowserProfile.
@@ -106,11 +108,14 @@ impl WebclawMcp {
             );
         }
 
+        let serpapi = SerpApiClient::from_env();
+
         Self {
             tool_router: Self::tool_router(),
             fetch_client: Arc::new(fetch_client),
             llm_chain,
             cloud,
+            serpapi,
         }
     }
 
@@ -566,46 +571,51 @@ impl WebclawMcp {
         ))
     }
 
-    /// Search the web for a query and return structured results. Requires WEBCLAW_API_KEY.
+    /// Search the web for a query and return structured results.
+    /// Uses WEBCLAW_API_KEY (cloud) or SERPAPI_KEY (Google via SerpAPI) as fallback.
     #[tool]
     async fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
-        let cloud = self
-            .cloud
-            .as_ref()
-            .ok_or("Search requires WEBCLAW_API_KEY. Get a key at https://webclaw.io")?;
-
-        let mut body = json!({ "query": params.query });
-        if let Some(num) = params.num_results {
-            body["num_results"] = json!(num);
+        // Priority 1: SerpAPI (local key, Google results)
+        if let Some(ref serpapi) = self.serpapi {
+            info!(query = %params.query, "searching via SerpAPI");
+            return serpapi.search(&params.query, params.num_results).await;
         }
 
-        let resp = cloud.post("search", body).await?;
-
-        // Format results for readability
-        if let Some(results) = resp.get("results").and_then(|v| v.as_array()) {
-            let mut output = format!("Found {} results:\n\n", results.len());
-            for (i, result) in results.iter().enumerate() {
-                let title = result.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                let url = result.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                let snippet = result
-                    .get("snippet")
-                    .or_else(|| result.get("description"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                output.push_str(&format!(
-                    "{}. {}\n   {}\n   {}\n\n",
-                    i + 1,
-                    title,
-                    url,
-                    snippet
-                ));
+        // Priority 2: Webclaw Cloud API
+        if let Some(ref cloud) = self.cloud {
+            let mut body = json!({ "query": params.query });
+            if let Some(num) = params.num_results {
+                body["num_results"] = json!(num);
             }
-            Ok(output)
-        } else {
-            // Fallback: return raw JSON if unexpected shape
-            Ok(serde_json::to_string_pretty(&resp).unwrap_or_default())
+
+            let resp = cloud.post("search", body).await?;
+
+            if let Some(results) = resp.get("results").and_then(|v| v.as_array()) {
+                let mut output = format!("Found {} results:\n\n", results.len());
+                for (i, result) in results.iter().enumerate() {
+                    let title = result.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let url = result.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    let snippet = result
+                        .get("snippet")
+                        .or_else(|| result.get("description"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    output.push_str(&format!(
+                        "{}. {}\n   {}\n   {}\n\n",
+                        i + 1,
+                        title,
+                        url,
+                        snippet
+                    ));
+                }
+                return Ok(output);
+            } else {
+                return Ok(serde_json::to_string_pretty(&resp).unwrap_or_default());
+            }
         }
+
+        Err("Search requires SERPAPI_KEY or WEBCLAW_API_KEY. Set one in your environment.".into())
     }
 }
 

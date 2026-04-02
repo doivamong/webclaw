@@ -2,6 +2,7 @@
 /// Exposes web extraction tools over stdio transport for AI agents
 /// like Claude Desktop, Claude Code, and other MCP clients.
 mod cloud;
+mod serpapi;
 mod server;
 mod tools;
 
