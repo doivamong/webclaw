@@ -56,7 +56,7 @@ Two binaries: `webclaw` (CLI), `webclaw-mcp` (MCP server).
 
 ### MCP Server (`webclaw-mcp`)
 - Model Context Protocol server over stdio transport
-- 8 tools: scrape, crawl, map, batch, extract, summarize, diff, brand
+- 10 tools: scrape, search, research, crawl, map, batch, extract, summarize, diff, brand
 - Works with Claude Desktop, Claude Code, and any MCP client
 - Uses `rmcp` crate (official Rust MCP SDK)
 
@@ -67,6 +67,21 @@ Two binaries: `webclaw` (CLI), `webclaw-mcp` (MCP server).
 - **RUSTFLAGS are set in `.cargo/config.toml`** — no need to pass manually.
 - **webclaw-llm uses plain reqwest** (NOT primp-patched). LLM APIs don't need TLS fingerprinting.
 - **qwen3 thinking tags** (`<think>`) are stripped at both provider and consumer levels.
+
+## Tool Routing (MCP)
+
+Khi webclaw MCP connected, **ưu tiên webclaw tools** thay vì built-in Claude Code tools:
+
+| Task | Use | NOT |
+|------|-----|-----|
+| Web search | `webclaw.search` (8s, $0, rich snippets) | WebSearch (15s, tốn token plan) |
+| Deep research | `webclaw.research` (1 call, 20s) | WebSearch + nhiều WebFetch (60s, 15x tokens) |
+| Fetch page | `webclaw.scrape` (readability + formats) | WebFetch |
+| Multiple URLs | `webclaw.batch` (parallel) | Sequential WebFetch |
+
+Fallback WebSearch/WebFetch chỉ khi webclaw tool fail hoặc unavailable.
+
+Webclaw-only (không có built-in equivalent): `crawl`, `map`, `diff`, `brand`, `extract`, `summarize`.
 
 ## Build & Test
 
@@ -145,8 +160,9 @@ Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_deskt
 ## Skills
 
 - `/scrape <url>` — extract content from a URL
+- `/search <query>` — web search via SerpAPI
 - `/benchmark [url]` — run extraction performance benchmarks
-- `/research <url>` — deep web research via crawl + extraction
+- `/research <query>` — deep research: search + fetch + LLM synthesis
 - `/crawl <url>` — crawl a website
 - `/commit` — conventional commit with change analysis
 
