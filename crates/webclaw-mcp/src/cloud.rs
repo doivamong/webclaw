@@ -117,8 +117,12 @@ fn truncate_error(text: &str) -> &str {
 pub fn is_bot_protected(html: &str, headers: &webclaw_fetch::HeaderMap) -> bool {
     let html_lower = html.to_lowercase();
 
-    // Cloudflare challenge page
-    if html_lower.contains("_cf_chl_opt") || html_lower.contains("challenge-platform") {
+    // Cloudflare challenge page (pure challenge pages are typically short)
+    if html_lower.contains("_cf_chl_opt") {
+        return true;
+    }
+    // "challenge-platform" on short pages = challenge; on long pages = embedded Turnstile widget
+    if html_lower.contains("challenge-platform") && html.len() < 50_000 {
         return true;
     }
 
