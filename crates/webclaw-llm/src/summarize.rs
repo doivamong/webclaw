@@ -5,6 +5,7 @@ use crate::provider::{CompletionRequest, LlmProvider, Message};
 
 /// Summarize content using an LLM.
 /// Returns plain text (not JSON). Default is 3 sentences.
+/// Truncates input to avoid overwhelming small models.
 pub async fn summarize(
     content: &str,
     max_sentences: Option<usize>,
@@ -13,10 +14,31 @@ pub async fn summarize(
 ) -> Result<String, LlmError> {
     let n = max_sentences.unwrap_or(3);
 
+    // Truncate content to ~4000 chars (~1000 tokens) for small models.
+    // Keeps the beginning (title, intro) which is most informative.
+    let truncated = if content.len() > 4000 {
+        let boundary = content[..4000]
+            .rfind(|c: char| c == '.' || c == '\n')
+            .unwrap_or(4000);
+        &content[..boundary]
+    } else {
+        content
+    };
+
     let system = format!(
-        "You are a summarization engine. Summarize the following content in exactly {n} sentences. \
-         Output ONLY the summary, nothing else. No introductions, no questions, no formatting, no preamble."
+        "You are a strict summarization engine.\n\
+         RULES:\n\
+         - Output EXACTLY {n} sentences. Not {more} not fewer.\n\
+         - Each sentence must be a complete, informative statement.\n\
+         - No bullet points, no headings, no code blocks, no markdown.\n\
+         - No introductions like \"Here is\" or \"This page\".\n\
+         - No questions or suggestions at the end.\n\
+         - Plain text only. Start directly with the first sentence.",
+        more = n + 1
     );
+
+    // Cap max_tokens: ~40 tokens per sentence is generous
+    let token_limit = (n as u32) * 40 + 20;
 
     let request = CompletionRequest {
         model: model.unwrap_or_default().to_string(),
@@ -27,18 +49,16 @@ pub async fn summarize(
             },
             Message {
                 role: "user".into(),
-                content: content.to_string(),
+                content: truncated.to_string(),
             },
         ],
-        temperature: Some(0.3),
-        max_tokens: None,
+        temperature: Some(0.2),
+        max_tokens: Some(token_limit),
         json_mode: false,
     };
 
     let response = provider.complete(&request).await?;
 
-    // Providers already strip thinking tags, but defense in depth for summarize
-    // since its output goes directly to the user as plain text
     Ok(strip_thinking_tags(&response))
 }
 
@@ -57,6 +77,7 @@ mod tests {
             assert!(system.contains("sentences"));
             assert!(system.contains("summarization engine"));
             assert!(!req.json_mode, "summarize should not use json_mode");
+            assert!(req.max_tokens.is_some(), "summarize should set max_tokens");
             Ok("This is a test summary.".into())
         }
         async fn is_available(&self) -> bool {

@@ -60,8 +60,17 @@ impl LlmProvider for OllamaProvider {
         if request.json_mode {
             body["format"] = json!("json");
         }
-        if let Some(temp) = request.temperature {
-            body["options"] = json!({ "temperature": temp });
+        {
+            let mut opts = serde_json::Map::new();
+            if let Some(temp) = request.temperature {
+                opts.insert("temperature".into(), json!(temp));
+            }
+            if let Some(max) = request.max_tokens {
+                opts.insert("num_predict".into(), json!(max));
+            }
+            if !opts.is_empty() {
+                body["options"] = serde_json::Value::Object(opts);
+            }
         }
 
         let url = format!("{}/api/chat", self.base_url);
