@@ -122,19 +122,19 @@ Output:
 > Đo thực tế trên Windows 11, i5-12400, RTX 4060 8GB, Ollama cloud (DeepSeek V3.1 671B).
 > 3 queries: tiếng Việt local, English technical, English niche.
 > Mỗi tool test 10 results. Relevance đánh giá thủ công.
+> **Benchmark v2** (2026-04-03): sau khi thêm locale-aware params (hl/gl/lr), auto language detection, quota cache.
 
 ### Search: `webclaw.search` vs `WebSearch` (3 queries)
 
 | Metric | webclaw.search | WebSearch | Đánh giá |
 |--------|:-:|:-:|---|
-| **Tốc độ trung bình** | **15.7s** | 18.0s | webclaw nhanh hơn ~15% |
+| **Tốc độ trung bình** | **8.0s** | 14.7s | webclaw nhanh hơn **~45%** (trước: ~15%) |
 | **Kết quả/query** | 10 | 10 | Ngang nhau |
-| **Relevance trung bình** | **7.7/10** | 7.3/10 | webclaw nhỉnh hơn |
-| **Snippet richness** | **1,686 chars** | 1,077 chars | webclaw snippet dài, có giá/SĐT |
-| **Claude tokens** | **~421** | ~538 | webclaw tiết kiệm ~22% |
-| **Claude synthesis cần?** | Không | Có | webclaw trả kết quả dùng ngay |
+| **Relevance trung bình** | **8.7/10** | 8.0/10 | webclaw nhỉnh hơn (trước: 7.7 vs 7.3) |
+| **Snippet richness** | **Chi tiết** | Tổng hợp | webclaw: giá, SĐT, tên cụ thể; WebSearch: synthesis paragraph |
+| **Claude synthesis** | Claude tự tổng hợp | Claude tự tổng hợp | Cơ chế giống nhau — webclaw raw data phong phú hơn |
 | **Answer box/KG** | Có (SerpAPI) | Có (built-in) | Ngang nhau |
-| **Niche query (Q3)** | 4/10 relevant | **5/10 + synthesis** | WebSearch tốt hơn cho niche |
+| **Niche query (Q3)** | **6/10** relevant | **7/10 + synthesis** | WebSearch vẫn nhỉnh cho niche, nhưng gap thu hẹp |
 | **Quota** | 250/tháng/key (scale N keys) | Giới hạn bởi plan token budget | webclaw quota rõ ràng, scale được |
 | **Chi phí** | $0 (free accounts) | Tốn token từ plan ($20–200/mo) | WebSearch ẩn chi phí vào token budget |
 
@@ -144,22 +144,33 @@ Output:
 
 ```
 Q1: "cho thuê xe tự lái Gia Lai giá rẻ" (Tiếng Việt, local)
-    webclaw:   20.6s  10/10 relevant  1,847 chars  ← có giá, SĐT thực
-    WebSearch: 17.8s   8/10 relevant  1,050 chars  ← 2 kết quả off-topic
+    webclaw:    9.0s  10/10 relevant  ← có giá cụ thể, SĐT, 10/10 đều Gia Lai
+    WebSearch: 14.9s   8/10 relevant  ← 1 sai (Bình Định), 1 off-topic (Mioto chung)
 
 Q2: "Flask SQLite connection pooling best practices" (EN, technical)
-    webclaw:   15.7s   9/10 relevant  1,690 chars  ← SO, Flask docs, Reddit
-    WebSearch: 17.9s   9/10 relevant  1,200 chars  ← Flask docs, SQLAlchemy
+    webclaw:    7.2s  10/10 relevant  ← SO, Flask docs chính thức, Reddit, tutorials
+    WebSearch: 14.6s   9/10 relevant  ← có peewee ORM off-topic
 
 Q3: "wreq BoringSSL webpki-roots Windows TLS fix 2026" (EN, niche)
-    webclaw:   10.9s   4/10 relevant  1,520 chars  ← raw results, ít liên quan
-    WebSearch: 18.4s   5/10 relevant    980 chars  ← Claude tổng hợp câu trả lời
+    webclaw:    7.9s   6/10 relevant  ← tìm được wreq repo + TLS/webpki liên quan
+    WebSearch: 14.5s   7/10 relevant  ← tìm được wreq docs + repo + synthesis
+```
+
+**So sánh v1 → v2 (sau locale-aware + quota cache):**
+```
+                    v1 (trước)      v2 (sau)        Cải thiện
+Tốc độ TB          15.7s           8.0s            ↓ 49% (quota cache + network)
+Relevance Q1       10/10           10/10           giữ nguyên
+Relevance Q2        9/10           10/10           ↑ +1 (hl/gl chính xác hơn)
+Relevance Q3        4/10            6/10           ↑ +2 (locale params giúp Google)
+Relevance TB        7.7/10          8.7/10         ↑ +1.0
 ```
 
 **Kết luận search:**
-- webclaw thắng ở **tốc độ, snippet quality, token efficiency, tiếng Việt**
-- WebSearch thắng ở **niche queries (Claude synthesis)** nhưng tốn token plan, không thực sự miễn phí
-- Chiến lược tối ưu: webclaw cho phần lớn use cases (chi phí $0, quota scale được), WebSearch cho niche queries khi cần Claude synthesis
+- webclaw thắng áp đảo ở **tốc độ (nhanh gấp ~1.8x), tiếng Việt, technical queries, chi phí $0**
+- WebSearch nhỉnh nhẹ ở **niche queries** (7/10 vs 6/10), gap chỉ 1 điểm
+- Claude Code tự synthesis cho cả hai tool — không có lợi thế synthesis riêng cho bên nào
+- Chiến lược: webclaw cho phần lớn use cases (nhanh hơn, chi phí $0, snippet phong phú hơn)
 
 ### Research: `webclaw.research` vs Claude Code (WebSearch + 5× WebFetch)
 
@@ -188,12 +199,31 @@ TỔNG                 151K tokens          536K tokens            72%
 
 ### Điểm yếu cần lưu ý (trung thực)
 
-| Điểm yếu webclaw | Mức độ | Workaround |
-|-------------------|--------|------------|
-| Niche query relevance thấp hơn | Nhẹ | Dùng WebSearch cho niche queries |
-| SerpAPI quota 250/tháng/key | Nhẹ | Multi-account rotation (N keys × 250/tháng), chi phí $0 |
-| Không có Claude synthesis | Nhẹ | Claude Code tự tổng hợp từ raw results |
-| SerpAPI down → search fail | Thấp | Fallback WebSearch tự động |
+| Điểm yếu webclaw | Mức độ | Nguyên nhân | Ghi chú |
+|-------------------|--------|-------------|---------|
+| Niche query relevance thấp hơn (6/10 vs 7/10) | Nhẹ | Giới hạn cấu trúc: raw Google results vs Claude LLM synthesis | Gap chỉ 1 điểm, webclaw thắng 2/3 queries. Đã thử nghiệm 3 hướng LLM — xem chi tiết bên dưới |
+| ~~Không có Claude synthesis~~ | **Không phải điểm yếu** | Claude Code tự synthesis kết quả từ cả webclaw.search lẫn WebSearch — cơ chế giống nhau. webclaw trả raw data phong phú hơn (snippet dài, giá, SĐT) → Claude synthesis chất lượng hơn | Đã loại khỏi danh sách điểm yếu |
+| SerpAPI quota 250/tháng/key | Nhẹ | Free tier giới hạn | Multi-account rotation (N keys × 250/tháng), chi phí $0 |
+| SerpAPI down → search fail | Thấp | Phụ thuộc external service | Fallback WebSearch tự động |
+
+### Thử nghiệm LLM query improvement (đã reject)
+
+Đã benchmark 3 hướng tiếp cận LLM cho search, tất cả đều **tệ hơn baseline v2**:
+
+```
+Approach          Model                    Prompt strategy              TB Relevance  TB Latency
+─────────         ─────                    ──────────────               ───────────   ──────────
+v2 (baseline)     Không LLM                Không                       8.7/10        8.0s
+v3 (rewrite)      deepseek-v3.1:671b       "Rewrite query for Google"  6.7/10 ↓      15.9s ↑
+v4 (enrich)       deepseek-v3.1:671b       "Add 1-2 words, keep all"   8.3/10 ↓      14.1s ↑
+```
+
+**Phát hiện:** LLM query rewriting/enrichment phản tác dụng cho domain-specific search:
+- **Rewrite** (v3): model tổng quát hóa quá mức — bỏ "wreq", thêm "gunicorn" vào SQLite query
+- **Enrich** (v4): prompt tối ưu giữ được từ gốc nhưng từ thêm vào ("certificate") kéo Google lệch hướng
+- Model nhỏ (qwen3:8b): rewrite sai nghĩa ("xe tự lái"→"xe tải")
+- Model lớn (671B): giữ đúng từ nhưng thêm noise, +6s latency mỗi search
+- **Kết luận:** Giữ v2 (locale-aware + quota cache) — tối ưu thực tế, không LLM overhead
 
 ---
 

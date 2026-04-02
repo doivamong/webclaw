@@ -686,7 +686,15 @@ impl WebclawMcp {
         // Priority 1: SerpAPI (local key, Google results)
         if let Some(ref serpapi) = self.serpapi {
             info!(query = %params.query, "searching via SerpAPI");
-            return serpapi.search(&params.query, params.num_results).await;
+            return serpapi
+                .search(
+                    &params.query,
+                    params.num_results,
+                    params.country,
+                    params.language,
+                    params.recency,
+                )
+                .await;
         }
 
         // Priority 2: Webclaw Cloud API

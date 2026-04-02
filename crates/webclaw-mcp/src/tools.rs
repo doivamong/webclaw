@@ -102,4 +102,10 @@ pub struct SearchParams {
     pub query: String,
     /// Number of results to return (default: 10)
     pub num_results: Option<u32>,
+    /// Country code for geolocation (e.g. "vn", "us", "jp"). Auto-detected from query language if not set.
+    pub country: Option<String>,
+    /// Language code (e.g. "vi", "en", "ja"). Auto-detected from query if not set.
+    pub language: Option<String>,
+    /// Time range filter: "day", "week", "month", "year". Useful for niche/recent queries.
+    pub recency: Option<String>,
 }

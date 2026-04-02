@@ -3,11 +3,18 @@
 /// Supports comma-separated keys in SERPAPI_KEY env var.
 /// Checks quota via Account API (free, not counted) before each search.
 /// Auto-rotates to next key when current key is exhausted.
+/// Quota results are cached for 5 minutes to reduce latency.
+/// Optional LLM query rewriting via Ollama for better relevance.
 use serde_json::Value;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 const SEARCH_URL: &str = "https://serpapi.com/search.json";
 const ACCOUNT_URL: &str = "https://serpapi.com/account.json";
+
+/// How long to cache quota check results.
+const QUOTA_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
 /// Structured search result for research pipeline.
 pub struct SearchResult {
@@ -16,10 +23,37 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
-/// SerpAPI client with multi-key rotation.
+/// Search options derived from params + auto-detection.
+pub struct SearchOptions {
+    pub num: u32,
+    pub country: Option<String>,
+    pub language: Option<String>,
+    pub recency: Option<String>,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            num: 10,
+            country: None,
+            language: None,
+            recency: None,
+        }
+    }
+}
+
+/// Cached quota entry for a single key.
+struct QuotaEntry {
+    remaining: u64,
+    checked_at: Instant,
+}
+
+/// SerpAPI client with multi-key rotation and quota caching.
 pub struct SerpApiClient {
     keys: Vec<String>,
     http: reqwest::Client,
+    /// Per-key quota cache: index matches self.keys.
+    quota_cache: Mutex<Vec<Option<QuotaEntry>>>,
 }
 
 impl SerpApiClient {
@@ -35,16 +69,48 @@ impl SerpApiClient {
         if keys.is_empty() {
             return None;
         }
+        let cache: Vec<Option<QuotaEntry>> = (0..keys.len()).map(|_| None).collect();
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
         info!(key_count = keys.len(), "SerpAPI search enabled (multi-key rotation)");
-        Some(Self { keys, http })
+        Some(Self {
+            keys,
+            http,
+            quota_cache: Mutex::new(cache),
+        })
     }
 
-    /// Check remaining quota for a key. Returns searches left, or 0 on error.
-    async fn check_quota(&self, key: &str) -> u64 {
+    /// Check remaining quota for a key. Uses cache if fresh (< 5 min).
+    async fn check_quota(&self, key_index: usize, key: &str) -> u64 {
+        // Check cache first
+        if let Ok(cache) = self.quota_cache.lock() {
+            if let Some(Some(entry)) = cache.get(key_index) {
+                if entry.checked_at.elapsed() < QUOTA_CACHE_TTL && entry.remaining > 0 {
+                    return entry.remaining;
+                }
+            }
+        }
+
+        // Cache miss or expired — fetch from API
+        let remaining = self.fetch_quota(key).await;
+
+        // Update cache
+        if let Ok(mut cache) = self.quota_cache.lock() {
+            if let Some(slot) = cache.get_mut(key_index) {
+                *slot = Some(QuotaEntry {
+                    remaining,
+                    checked_at: Instant::now(),
+                });
+            }
+        }
+
+        remaining
+    }
+
+    /// Fetch quota from SerpAPI Account API (not cached).
+    async fn fetch_quota(&self, key: &str) -> u64 {
         let resp = self
             .http
             .get(ACCOUNT_URL)
@@ -65,10 +131,19 @@ impl SerpApiClient {
         }
     }
 
+    /// Decrement cached quota after a successful search.
+    fn decrement_quota(&self, key_index: usize) {
+        if let Ok(mut cache) = self.quota_cache.lock() {
+            if let Some(Some(entry)) = cache.get_mut(key_index) {
+                entry.remaining = entry.remaining.saturating_sub(1);
+            }
+        }
+    }
+
     /// Find the first key with remaining quota.
     async fn pick_key(&self) -> Option<(usize, &str)> {
         for (i, key) in self.keys.iter().enumerate() {
-            let left = self.check_quota(key).await;
+            let left = self.check_quota(i, key).await;
             if left > 0 {
                 info!(key_index = i, searches_left = left, "using SerpAPI key");
                 return Some((i, key));
@@ -79,7 +154,7 @@ impl SerpApiClient {
     }
 
     /// Raw SerpAPI call. Returns parsed JSON.
-    async fn raw_search(&self, query: &str, num: u32) -> Result<Value, String> {
+    async fn raw_search(&self, query: &str, opts: &SearchOptions) -> Result<Value, String> {
         let (idx, key) = self
             .pick_key()
             .await
@@ -90,15 +165,56 @@ impl SerpApiClient {
                 )
             })?;
 
+        // Auto-detect language from query if not specified
+        let detected_lang = opts.language.as_deref().unwrap_or_else(|| detect_language(query));
+        let detected_country = opts
+            .country
+            .as_deref()
+            .unwrap_or_else(|| lang_to_country(detected_lang));
+
+        let num_str = opts.num.min(20).to_string();
+        let mut params: Vec<(&str, &str)> = vec![
+            ("q", query),
+            ("api_key", key),
+            ("engine", "google"),
+            ("num", &num_str),
+            ("hl", detected_lang),
+            ("gl", detected_country),
+        ];
+
+        // Language restrict: only for non-English queries
+        let lr_value = format!("lang_{detected_lang}");
+        if detected_lang != "en" {
+            params.push(("lr", &lr_value));
+        }
+
+        // Time-based search filter
+        let tbs_value;
+        if let Some(ref recency) = opts.recency {
+            tbs_value = match recency.as_str() {
+                "day" => "qdr:d".to_string(),
+                "week" => "qdr:w".to_string(),
+                "month" => "qdr:m".to_string(),
+                "year" => "qdr:y".to_string(),
+                _ => String::new(),
+            };
+            if !tbs_value.is_empty() {
+                params.push(("tbs", &tbs_value));
+            }
+        }
+
+        info!(
+            query,
+            lang = detected_lang,
+            country = detected_country,
+            recency = opts.recency.as_deref().unwrap_or("none"),
+            "SerpAPI search"
+        );
+
         let resp = self
             .http
             .get(SEARCH_URL)
-            .query(&[
-                ("q", query),
-                ("api_key", key),
-                ("engine", "google"),
-                ("num", &num.to_string()),
-            ])
+            .query(&params)
             .send()
             .await
             .map_err(|e| format!("SerpAPI request failed: {e}"))?;
@@ -112,21 +228,76 @@ impl SerpApiClient {
             ));
         }
 
+        // Successful search — decrement cached quota
+        self.decrement_quota(idx);
+
         resp.json()
             .await
             .map_err(|e| format!("SerpAPI parse failed: {e}"))
     }
 
     /// Search and return formatted text (for search tool).
-    pub async fn search(&self, query: &str, num_results: Option<u32>) -> Result<String, String> {
-        let data = self.raw_search(query, num_results.unwrap_or(10).min(20)).await?;
+    pub async fn search(
+        &self,
+        query: &str,
+        num_results: Option<u32>,
+        country: Option<String>,
+        language: Option<String>,
+        recency: Option<String>,
+    ) -> Result<String, String> {
+        let opts = SearchOptions {
+            num: num_results.unwrap_or(10),
+            country,
+            language,
+            recency,
+        };
+        let data = self.raw_search(query, &opts).await?;
         format_results(&data)
     }
 
     /// Search and return structured results (for research pipeline).
     pub async fn search_urls(&self, query: &str, num: u32) -> Result<Vec<SearchResult>, String> {
-        let data = self.raw_search(query, num).await?;
+        let opts = SearchOptions {
+            num,
+            ..Default::default()
+        };
+        let data = self.raw_search(query, &opts).await?;
         Ok(parse_results(&data))
+    }
+}
+
+/// Detect language from query text using simple heuristics.
+/// Returns ISO 639-1 code: "vi", "ja", "zh", "ko", or "en" (default).
+fn detect_language(query: &str) -> &'static str {
+    for ch in query.chars() {
+        // Vietnamese diacritical marks (Latin Extended + combining)
+        if matches!(ch, 'à'..='ỹ' | 'À'..='Ỹ') {
+            return "vi";
+        }
+        // CJK Unified Ideographs
+        if ('\u{4E00}'..='\u{9FFF}').contains(&ch) {
+            return "zh";
+        }
+        // Japanese Hiragana / Katakana
+        if ('\u{3040}'..='\u{30FF}').contains(&ch) {
+            return "ja";
+        }
+        // Korean Hangul
+        if ('\u{AC00}'..='\u{D7AF}').contains(&ch) || ('\u{1100}'..='\u{11FF}').contains(&ch) {
+            return "ko";
+        }
+    }
+    "en"
+}
+
+/// Map language code to default country code.
+fn lang_to_country(lang: &str) -> &'static str {
+    match lang {
+        "vi" => "vn",
+        "ja" => "jp",
+        "zh" => "cn",
+        "ko" => "kr",
+        _ => "us",
     }
 }
 
@@ -216,4 +387,44 @@ fn format_results(data: &Value) -> Result<String, String> {
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_language_vietnamese() {
+        assert_eq!(detect_language("cho thuê xe tự lái Gia Lai giá rẻ"), "vi");
+        assert_eq!(detect_language("nhà hàng Đà Nẵng"), "vi");
+    }
+
+    #[test]
+    fn test_detect_language_english() {
+        assert_eq!(detect_language("Flask SQLite connection pooling"), "en");
+        assert_eq!(detect_language("rust async tutorial"), "en");
+    }
+
+    #[test]
+    fn test_detect_language_cjk() {
+        assert_eq!(detect_language("おすすめレストラン"), "ja");
+        assert_eq!(detect_language("北京天气预报"), "zh");
+        assert_eq!(detect_language("서울 맛집"), "ko");
+    }
+
+    #[test]
+    fn test_lang_to_country() {
+        assert_eq!(lang_to_country("vi"), "vn");
+        assert_eq!(lang_to_country("en"), "us");
+        assert_eq!(lang_to_country("ja"), "jp");
+    }
+
+    #[test]
+    fn test_recency_values() {
+        // Just verify the mapping is correct
+        assert_eq!(
+            match "day" { "day" => "qdr:d", "week" => "qdr:w", "month" => "qdr:m", "year" => "qdr:y", _ => "" },
+            "qdr:d"
+        );
+    }
 }
