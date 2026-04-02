@@ -12,6 +12,7 @@
 | **Multi-key rotation** | `330e395` | `SERPAPI_KEY` hỗ trợ comma-separated nhiều keys. Check quota qua Account API trước mỗi search, auto-switch khi hết |
 | **Summarize cho small models** | `2c58d7d` | Truncate input 4000 chars, prompt mạnh hơn (cấm markdown/code), max_tokens cap, Ollama pass `num_predict` |
 | **Local research pipeline** | `8350746` | search → batch fetch 5-10 URLs → Ollama synthesis (DeepSeek 671B). Fallback: trả raw sources cho Claude Code tự tổng hợp |
+| **Enriched search output** | `2d73c36` | Thêm answer box (title+snippet+link), knowledge graph, related questions từ SerpAPI response |
 
 ## Cài đặt trên Windows
 
@@ -119,51 +120,78 @@ Output:
 ## Benchmark: WebClaw vs Claude Code built-in
 
 > Đo thực tế trên Windows 11, i5-12400, RTX 4060 8GB, Ollama cloud (DeepSeek V3.1 671B).
-> Cùng query: `"cho thuê xe tự lái Gia Lai giá rẻ"` (search) và `"Flask SQLite WAL mode best practices"` (research).
+> 3 queries: tiếng Việt local, English technical, English niche.
+> Mỗi tool test 10 results. Relevance đánh giá thủ công.
 
-### Search: `webclaw.search` vs `WebSearch`
+### Search: `webclaw.search` vs `WebSearch` (3 queries)
+
+| Metric | webclaw.search | WebSearch | Đánh giá |
+|--------|:-:|:-:|---|
+| **Tốc độ trung bình** | **15.7s** | 18.0s | webclaw nhanh hơn ~15% |
+| **Kết quả/query** | 10 | 10 | Ngang nhau |
+| **Relevance trung bình** | **7.7/10** | 7.3/10 | webclaw nhỉnh hơn |
+| **Snippet richness** | **1,686 chars** | 1,077 chars | webclaw snippet dài, có giá/SĐT |
+| **Claude tokens** | **~421** | ~538 | webclaw tiết kiệm ~22% |
+| **Claude synthesis cần?** | Không | Có | webclaw trả kết quả dùng ngay |
+| **Answer box/KG** | Có (SerpAPI) | Có (built-in) | Ngang nhau |
+| **Niche query (Q3)** | 4/10 relevant | **5/10 + synthesis** | WebSearch tốt hơn cho niche |
+| **Quota** | 500/tháng (2 keys) | Không giới hạn | WebSearch linh hoạt hơn |
+| **Chi phí** | 1 SerpAPI query | Included in plan | WebSearch miễn phí |
+
+**Chi tiết 3 queries:**
 
 ```
-                     webclaw.search              WebSearch (built-in)
-                     ──────────────              ────────────────────
-Tốc độ               ~19s                        ~17s
-Kết quả              5 (Google, SerpAPI)         10 (Google, built-in)
-Token vào context    ~230                        ~675 (results + synthesis)
-Claude synthesis     0 (kết quả sẵn dùng)       ~375 tokens (Claude tổng hợp)
-Tổng Claude tokens   ~230                        ~675
-Tiết kiệm token      ██████████████████ 66%      ── baseline ──
-Chi phí              1 SerpAPI query / 500/tháng  Included in plan
+Q1: "cho thuê xe tự lái Gia Lai giá rẻ" (Tiếng Việt, local)
+    webclaw:   20.6s  10/10 relevant  1,847 chars  ← có giá, SĐT thực
+    WebSearch: 17.8s   8/10 relevant  1,050 chars  ← 2 kết quả off-topic
+
+Q2: "Flask SQLite connection pooling best practices" (EN, technical)
+    webclaw:   15.7s   9/10 relevant  1,690 chars  ← SO, Flask docs, Reddit
+    WebSearch: 17.9s   9/10 relevant  1,200 chars  ← Flask docs, SQLAlchemy
+
+Q3: "wreq BoringSSL webpki-roots Windows TLS fix 2026" (EN, niche)
+    webclaw:   10.9s   4/10 relevant  1,520 chars  ← raw results, ít liên quan
+    WebSearch: 18.4s   5/10 relevant    980 chars  ← Claude tổng hợp câu trả lời
 ```
+
+**Kết luận search:**
+- webclaw thắng ở **tốc độ, snippet quality, token efficiency, tiếng Việt**
+- WebSearch thắng ở **niche queries (Claude synthesis), không giới hạn quota**
+- Chiến lược tối ưu: webclaw cho research/kỹ thuật, WebSearch cho niche/unlimited
 
 ### Research: `webclaw.research` vs Claude Code (WebSearch + 5× WebFetch)
 
-```
-                     webclaw.research             Claude Code native
-                     ────────────────             ──────────────────
-Tốc độ               ~20s (1 call)               ~60s (6 calls)
-Sources scraped       5 (full content)            0 hoặc 5 (nếu thêm WebFetch)
-Token vào context    ~500 (report)               ~7,500 (search + 5 pages + synthesis)
-Claude synthesis     0 (Ollama, free)            ~500 tokens
-Tổng Claude tokens   ~500                        ~7,500
-Tiết kiệm token      █████████████████████ 93%   ── baseline ──
-Cấu trúc report     Overview → Findings →        Flat paragraphs
-                     Details → Sources [N]
-Citations            [1]-[4] numbered             Inline URLs
-Conflict detection   Có (prompt built-in)         Không
-Auto-detect language Có (VI query → VI report)    Tùy context
-```
+| Metric | webclaw.research | Claude Code native |
+|--------|:-:|:-:|
+| **Tốc độ** | **~20s** (1 MCP call) | ~60s (6 tool calls) |
+| **Sources scraped** | **5 full pages** | 0 (snippets only) hoặc 5 (nếu thêm WebFetch) |
+| **Claude tokens** | **~500** (đọc report) | ~7,500 (search + pages + synthesis) |
+| **Token savings** | **93%** | baseline |
+| **Cấu trúc** | Overview → Findings → Details → Sources | Flat paragraphs |
+| **Citations** | [1]-[4] numbered | Inline URLs |
+| **Conflict detection** | Có (prompt built-in) | Không |
+| **Auto language** | Có (VI query → VI report) | Tùy context |
+| **LLM cost** | Ollama free (DeepSeek 671B cloud) | Claude tokens (trả phí) |
 
-### Tổng hợp: 300 queries/tháng
+### Tổng hợp: 300 queries/tháng (ước tính)
 
 ```
-                     webclaw              Claude Code native
-                     ──────              ──────────────────
-Search tokens        300 × 230 = 69K     300 × 675 = 203K
-Research tokens      50 × 500 = 25K      50 × 7,500 = 375K
-──────────────────────────────────────────────────────────
-TỔNG                 94K tokens/tháng     578K tokens/tháng
-Tiết kiệm            ████████████████████ 84%
+                     webclaw              Claude Code native     Tiết kiệm
+                     ──────              ──────────────────     ─────────
+Search (300×)        300 × 421 = 126K    300 × 538 = 161K      22%
+Research (50×)        50 × 500 =  25K     50 × 7,500 = 375K    93%
+───────────────────────────────────────────────────────────────────
+TỔNG                 151K tokens          536K tokens            72%
 ```
+
+### Điểm yếu cần lưu ý (trung thực)
+
+| Điểm yếu webclaw | Mức độ | Workaround |
+|-------------------|--------|------------|
+| Niche query relevance thấp hơn | Nhẹ | Dùng WebSearch cho niche queries |
+| SerpAPI quota 500/tháng | Trung bình | Thêm free accounts, hoặc fallback WebSearch |
+| Không có Claude synthesis | Nhẹ | Claude Code tự tổng hợp từ raw results |
+| SerpAPI down → search fail | Thấp | Fallback WebSearch tự động |
 
 ---
 
