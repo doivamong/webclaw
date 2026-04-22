@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g., v0.3.5). Used when re-running after a failed tag push.'
+        required: true
+        type: string
 
 permissions:
   contents: write
