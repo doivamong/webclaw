@@ -22,3 +22,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+debug = 1
+
+# webclaw-mcp ships to Claude Desktop / Claude Code; bias toward binary size
+# (faster download, smaller distribution) over raw speed.
+[profile.release.package.webclaw-mcp]
+opt-level = "z"
+
