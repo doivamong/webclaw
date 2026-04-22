@@ -17,9 +17,7 @@ pub async fn summarize(
     // Truncate content to ~4000 chars (~1000 tokens) for small models.
     // Keeps the beginning (title, intro) which is most informative.
     let truncated = if content.len() > 4000 {
-        let boundary = content[..4000]
-            .rfind(|c: char| c == '.' || c == '\n')
-            .unwrap_or(4000);
+        let boundary = content[..4000].rfind(['.', '\n']).unwrap_or(4000);
         &content[..boundary]
     } else {
         content

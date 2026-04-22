@@ -29,9 +29,12 @@ unsafe_code = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
-# Deny common bug-class lints workspace-wide.
-all = { level = "deny", priority = -1 }
-# Pedantic as warnings only — surfaces improvements without blocking build.
+# Correctness lints are likely-bug — fail build.
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+# Style / complexity / perf / pedantic surfaced as warnings — don't block
+# the build on opinionated preferences; fix in cleanup passes.
+all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
 [profile.release]

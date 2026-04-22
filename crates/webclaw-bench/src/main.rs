@@ -20,7 +20,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
-use webclaw_core::{ExtractionResult, extract};
+use webclaw_core::{ExtractionResult, extract, is_probably_readable};
 use webclaw_fetch::{FetchClient, FetchConfig};
 
 #[derive(Parser, Debug)]
@@ -82,6 +82,8 @@ struct Outcome {
     labels_matched: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     labels_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    readable: Option<bool>,
     from_cache: bool,
 }
 
@@ -91,6 +93,7 @@ struct Report {
     total_run: usize,
     successes: usize,
     failures: usize,
+    readable_count: usize,
     avg_word_count: f64,
     avg_extraction_ms: f64,
     label_match_rate: f64,
@@ -194,6 +197,7 @@ async fn run_target(target: &Target, client: &FetchClient, args: &Args) -> Outco
             extraction_ms: None,
             labels_matched: None,
             labels_total: None,
+            readable: None,
             from_cache: false,
         };
     } else {
@@ -221,12 +225,14 @@ async fn run_target(target: &Target, client: &FetchClient, args: &Args) -> Outco
             extraction_ms: None,
             labels_matched: None,
             labels_total: None,
+            readable: None,
             from_cache,
         },
         Ok(html) => {
             let start = Instant::now();
             match extract(&html, Some(&target.url)) {
                 Ok(result) => {
+                    let readable = is_probably_readable(&result);
                     let ExtractionResult { content, .. } = result;
                     let elapsed = start.elapsed().as_millis();
                     let (matched, total) = compute_label_match(&content.plain_text, &target.labels);
@@ -240,6 +246,7 @@ async fn run_target(target: &Target, client: &FetchClient, args: &Args) -> Outco
                         extraction_ms: Some(elapsed),
                         labels_matched: Some(matched),
                         labels_total: Some(total),
+                        readable: Some(readable),
                         from_cache,
                     }
                 }
@@ -253,6 +260,7 @@ async fn run_target(target: &Target, client: &FetchClient, args: &Args) -> Outco
                     extraction_ms: None,
                     labels_matched: None,
                     labels_total: None,
+                    readable: Some(false),
                     from_cache,
                 },
             }
@@ -271,6 +279,7 @@ fn aggregate(outcomes: Vec<Outcome>) -> Report {
     let total_run = outcomes.len();
     let successes = outcomes.iter().filter(|o| o.error.is_none()).count();
     let failures = total_run - successes;
+    let readable_count = outcomes.iter().filter(|o| o.readable == Some(true)).count();
     let avg_word_count = if successes == 0 {
         0.0
     } else {
@@ -306,6 +315,7 @@ fn aggregate(outcomes: Vec<Outcome>) -> Report {
         total_run,
         successes,
         failures,
+        readable_count,
         avg_word_count,
         avg_extraction_ms,
         label_match_rate,
@@ -330,8 +340,13 @@ fn print_report(report: &Report) {
             (Some(m), Some(t)) => format!("{m}/{t}"),
             _ => "-".into(),
         };
+        let rd = match o.readable {
+            Some(true) => "yes",
+            Some(false) => "NO ",
+            None => "-  ",
+        };
         println!(
-            "[{tag}] [{cache}] words={word:<6} ms={ms:<4} labels={lbl:<4} {}  {}",
+            "[{tag}] [{cache}] readable={rd} words={word:<6} ms={ms:<4} labels={lbl:<4} {}  {}",
             o.name, o.url
         );
         if let Some(e) = &o.error {
@@ -342,6 +357,12 @@ fn print_report(report: &Report) {
     println!(
         "total: {} (ok: {}, fail: {})",
         report.total_run, report.successes, report.failures
+    );
+    println!(
+        "readable: {} / {} ({:.1}%)",
+        report.readable_count,
+        report.total_run,
+        (report.readable_count as f64 / report.total_run.max(1) as f64) * 100.0
     );
     println!("avg word_count: {:.1}", report.avg_word_count);
     println!("avg extraction_ms: {:.1}", report.avg_extraction_ms);

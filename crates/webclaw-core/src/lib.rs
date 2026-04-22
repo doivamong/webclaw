@@ -191,9 +191,89 @@ pub fn extract_with_options(
     })
 }
 
+/// Fast check: does this extraction look like a readable article?
+///
+/// Returns `false` for empty pages, error pages, bot-protection challenges,
+/// login walls, and other content that wouldn't be useful to feed to an LLM.
+///
+/// Heuristic: `plain_text` has at least 140 Unicode chars **or** 30 words.
+/// Using OR handles both Latin languages (where word count reflects content)
+/// and CJK (where whitespace-split word count is misleading but char count
+/// scales correctly). Thresholds match Mozilla readability.js'
+/// `isProbablyReaderable` convention.
+///
+/// This is a quick post-extraction gate. If you want a fast pre-extraction
+/// pre-flight check (skipping the extraction pipeline entirely), parse the
+/// document first and count visible text yourself — extraction is already
+/// cheap enough (<10ms per page) that running it first is usually fine.
+///
+/// Adapted from github.com/niklak/dom_smoothie (MIT) — `is_probably_readable`
+/// pattern. See ATTRIBUTIONS.md.
+pub fn is_probably_readable(result: &ExtractionResult) -> bool {
+    let text = &result.content.plain_text;
+    let char_count = text.chars().count();
+    let word_count = text.split_whitespace().count();
+    char_count >= 140 || word_count >= 30
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readable_accepts_real_article() {
+        let html = r#"<html><body><article>
+            <h1>Real Article Title</h1>
+            <p>This is a real article with more than enough text to be considered
+            readable by any reasonable heuristic. It has multiple paragraphs and
+            covers a topic in some depth.</p>
+            <p>Second paragraph with additional substantive content so we are well
+            over any plausible word-count threshold.</p>
+        </article></body></html>"#;
+        let result = extract(html, None).unwrap();
+        assert!(is_probably_readable(&result));
+    }
+
+    #[test]
+    fn readable_rejects_empty_page() {
+        let html = r#"<html><body></body></html>"#;
+        let result = extract(html, None);
+        // Either ExtractError::NoContent or extraction succeeds with empty text.
+        // Both paths should lead to is_probably_readable = false.
+        if let Ok(r) = result {
+            assert!(!is_probably_readable(&r));
+        }
+    }
+
+    #[test]
+    fn readable_rejects_login_wall() {
+        let html = r#"<html><body>
+            <h1>Sign in</h1>
+            <p>Please log in.</p>
+        </body></html>"#;
+        let result = extract(html, None).unwrap();
+        assert!(!is_probably_readable(&result));
+    }
+
+    #[test]
+    fn readable_accepts_cjk_content() {
+        // Japanese: long enough so char-count branch triggers (>=140 chars).
+        // Uses repetitive content to ensure plain_text retains enough chars.
+        let html = r#"<html><body><article>
+            <h1>日本語記事のタイトル</h1>
+            <p>これは日本語で書かれた長い記事の本文です。日本語の文章は通常スペースで区切られていません。そのため単語カウントではなく文字カウントで判定する必要があります。</p>
+            <p>二番目の段落でさらに多くの内容を追加します。読み取り可能かどうかを判定するためには、十分な量のテキストがあることが重要です。</p>
+            <p>三番目の段落でも内容を続けます。日本語、中国語、韓国語などの東アジア言語では、文字単位のカウントが実用的な指標となります。</p>
+            <p>四番目の段落でさらに内容を追加し、しっかりとした記事の形を作り上げています。読者が期待するような実質的なコンテンツを提供します。</p>
+        </article></body></html>"#;
+        let result = extract(html, None).unwrap();
+        let char_count = result.content.plain_text.chars().count();
+        assert!(
+            is_probably_readable(&result),
+            "CJK content should be readable (chars={char_count}, plain_text={})",
+            result.content.plain_text
+        );
+    }
 
     #[test]
     fn full_extraction_pipeline() {

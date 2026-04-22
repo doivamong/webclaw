@@ -29,6 +29,20 @@ attribution block required for direct merges — git history carries authorship.
 - **Adaptations**: None (verbatim copy). 1000 URLs in `name|url|labels` format used as benchmark corpus seed — fork can sample/filter subsets, harness is fork-specific.
 - **Why attribution tracked explicitly** even though upstream is same AGPL-3.0: the file contains curated third-party URL selection (Nike, Amazon, StockX, etc.) — upstream's editorial effort, acknowledge.
 
+## is_probably_readable fast-path gate
+
+- **Source**: https://github.com/niklak/dom_smoothie (MIT)
+- **Original**: `src/readable.rs` (`is_probably_readable` function) and
+  `src/config.rs:52-55` (`readable_min_score` / `readable_min_content_length`
+  defaults)
+- **Used in**: `crates/webclaw-core/src/lib.rs` (`is_probably_readable` fn)
+- **Adaptations**: dom_smoothie uses Mozilla-style score + content length.
+  Webclaw's scoring model is different (`find_best_node` + recovery walks,
+  not candidate propagation) so score threshold doesn't transfer directly.
+  Replaced with character-OR-word heuristic (≥140 chars OR ≥30 words) that
+  mirrors Mozilla's `isProbablyReaderable` convention and works for CJK
+  languages where word-count via `split_whitespace` is misleading.
+
 ## CJK punctuation heuristic (score_node)
 
 - **Source**: https://github.com/spider-rs/readability (MIT)
