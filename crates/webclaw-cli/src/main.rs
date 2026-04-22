@@ -86,6 +86,7 @@ fn warn_empty(url: &str, reason: &EmptyReason) {
 
 #[derive(Parser)]
 #[command(name = "webclaw", about = "Extract web content for LLMs", version)]
+#[allow(clippy::struct_excessive_bools)] // clap flags are naturally flat
 struct Cli {
     /// URLs to fetch (multiple allowed)
     #[arg()]
@@ -329,7 +330,7 @@ fn init_logging(verbose: bool) {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
-/// Build FetchConfig from CLI flags.
+/// Build `FetchConfig` from CLI flags.
 ///
 /// `--proxy` sets a single static proxy (no rotation).
 /// `--proxy-file` loads a pool of proxies and rotates per-request.
@@ -585,7 +586,7 @@ enum FetchOutput {
 }
 
 impl FetchOutput {
-    /// Get the local ExtractionResult, or try to parse it from the cloud response.
+    /// Get the local `ExtractionResult`, or try to parse it from the cloud response.
     fn into_extraction(self) -> Result<ExtractionResult, String> {
         match self {
             FetchOutput::Local(r) => Ok(*r),
@@ -712,8 +713,8 @@ async fn fetch_html(cli: &Cli) -> Result<FetchResult, String> {
             html: buf,
             url: String::new(),
             status: 200,
-            headers: Default::default(),
-            elapsed: Default::default(),
+            headers: webclaw_fetch::HeaderMap::default(),
+            elapsed: std::time::Duration::default(),
         });
     }
 
@@ -724,8 +725,8 @@ async fn fetch_html(cli: &Cli) -> Result<FetchResult, String> {
             html,
             url: String::new(),
             status: 200,
-            headers: Default::default(),
-            elapsed: Default::default(),
+            headers: webclaw_fetch::HeaderMap::default(),
+            elapsed: std::time::Duration::default(),
         });
     }
 
@@ -746,9 +747,8 @@ async fn fetch_html(cli: &Cli) -> Result<FetchResult, String> {
 /// Fetch external stylesheets referenced in HTML and inject them as `<style>` blocks.
 /// This allows brand extraction to see colors/fonts from external CSS files.
 async fn enrich_html_with_stylesheets(html: &str, base_url: &str) -> String {
-    let base = match url::Url::parse(base_url) {
-        Ok(u) => u,
-        Err(_) => return html.to_string(),
+    let Ok(base) = url::Url::parse(base_url) else {
+        return html.to_string();
     };
 
     // Extract stylesheet hrefs from <link rel="stylesheet" href="...">
@@ -762,8 +762,7 @@ async fn enrich_html_with_stylesheets(html: &str, base_url: &str) -> String {
             let href = cap.get(1).or(cap.get(2))?;
             Some(
                 base.join(href.as_str())
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|_| href.as_str().to_string()),
+                    .map_or_else(|_| href.as_str().to_string(), |u| u.to_string()),
             )
         })
         .take(10)
@@ -922,48 +921,46 @@ fn print_cloud_output(resp: &serde_json::Value, format: &OutputFormat) {
 }
 
 fn print_diff_output(diff: &ContentDiff, format: &OutputFormat) {
-    match format {
-        OutputFormat::Json => {
+    if let OutputFormat::Json = format {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(diff).expect("serialization failed")
+        );
+        return;
+    }
+
+    // For markdown/text/llm, show a human-readable summary
+    println!("Status: {:?}", diff.status);
+    println!("Word count delta: {:+}", diff.word_count_delta);
+
+    if !diff.metadata_changes.is_empty() {
+        println!("\nMetadata changes:");
+        for change in &diff.metadata_changes {
             println!(
-                "{}",
-                serde_json::to_string_pretty(diff).expect("serialization failed")
+                "  {}: {} -> {}",
+                change.field,
+                change.old.as_deref().unwrap_or("(none)"),
+                change.new.as_deref().unwrap_or("(none)"),
             );
         }
-        // For markdown/text/llm, show a human-readable summary
-        _ => {
-            println!("Status: {:?}", diff.status);
-            println!("Word count delta: {:+}", diff.word_count_delta);
+    }
 
-            if !diff.metadata_changes.is_empty() {
-                println!("\nMetadata changes:");
-                for change in &diff.metadata_changes {
-                    println!(
-                        "  {}: {} -> {}",
-                        change.field,
-                        change.old.as_deref().unwrap_or("(none)"),
-                        change.new.as_deref().unwrap_or("(none)"),
-                    );
-                }
-            }
-
-            if !diff.links_added.is_empty() {
-                println!("\nLinks added:");
-                for link in &diff.links_added {
-                    println!("  + {} ({})", link.href, link.text);
-                }
-            }
-
-            if !diff.links_removed.is_empty() {
-                println!("\nLinks removed:");
-                for link in &diff.links_removed {
-                    println!("  - {} ({})", link.href, link.text);
-                }
-            }
-
-            if let Some(ref text_diff) = diff.text_diff {
-                println!("\n{text_diff}");
-            }
+    if !diff.links_added.is_empty() {
+        println!("\nLinks added:");
+        for link in &diff.links_added {
+            println!("  + {} ({})", link.href, link.text);
         }
+    }
+
+    if !diff.links_removed.is_empty() {
+        println!("\nLinks removed:");
+        for link in &diff.links_removed {
+            println!("  - {} ({})", link.href, link.text);
+        }
+    }
+
+    if let Some(ref text_diff) = diff.text_diff {
+        println!("\n{text_diff}");
     }
 }
 
@@ -1144,6 +1141,7 @@ fn format_progress(page: &PageResult, index: usize, max_pages: usize) -> String 
     )
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_crawl(cli: &Cli) -> Result<(), String> {
     let url = cli
         .urls
@@ -1377,10 +1375,10 @@ async fn run_batch(cli: &Cli, entries: &[(String, Option<String>)]) -> Result<()
         let mut saved = 0usize;
         for r in &results {
             if let Ok(ref extraction) = r.result {
-                let filename = custom_names
-                    .get(r.url.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| url_to_filename(&r.url, &cli.format));
+                let filename = custom_names.get(r.url.as_str()).map_or_else(
+                    || url_to_filename(&r.url, &cli.format),
+                    std::string::ToString::to_string,
+                );
                 let content = format_output(extraction, &cli.format, cli.metadata);
                 write_to_file(dir, &filename, &content)?;
                 saved += 1;
@@ -1449,7 +1447,7 @@ fn fire_webhook(url: &str, payload: &serde_json::Value) {
             "embeds": [{
                 "title": format!("webclaw: {event}"),
                 "description": format!("```json\n{details}\n```"),
-                "color": 5814783
+                "color": 5_814_783
             }]
         })
         .to_string()
@@ -1603,6 +1601,7 @@ async fn run_watch_single(
 }
 
 /// Multi-URL watch loop -- batch fetch all URLs, diff each, report aggregate.
+#[allow(clippy::too_many_lines)]
 async fn run_watch_multi(
     cli: &Cli,
     client: &Arc<FetchClient>,
@@ -1610,7 +1609,7 @@ async fn run_watch_multi(
     urls: &[String],
     cancelled: &Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let url_refs: Vec<&str> = urls.iter().map(|u| u.as_str()).collect();
+    let url_refs: Vec<&str> = urls.iter().map(std::string::String::as_str).collect();
 
     // Initial pass: fetch all URLs in parallel
     let initial_results = client
@@ -1899,6 +1898,7 @@ async fn run_llm(cli: &Cli) -> Result<(), String> {
 
 /// Batch LLM extraction: fetch each URL, run LLM on extracted content, save/print results.
 /// URLs are processed sequentially to respect LLM provider rate limits.
+#[allow(clippy::too_many_lines)]
 async fn run_batch_llm(cli: &Cli, entries: &[(String, Option<String>)]) -> Result<(), String> {
     let client =
         FetchClient::new(build_fetch_config(cli)).map_err(|e| format!("client error: {e}"))?;
@@ -1999,10 +1999,10 @@ async fn run_batch_llm(cli: &Cli, entries: &[(String, Option<String>)]) -> Resul
                 eprintln!("-> extracted {detail}");
 
                 if let Some(ref dir) = cli.output_dir {
-                    let filename = custom_names
-                        .get(url.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| url_to_filename(url, &OutputFormat::Json));
+                    let filename = custom_names.get(url.as_str()).map_or_else(
+                        || url_to_filename(url, &OutputFormat::Json),
+                        std::string::ToString::to_string,
+                    );
                     write_to_file(dir, &filename, &output_str)?;
                 } else {
                     println!("--- {url}");
@@ -2055,6 +2055,7 @@ fn has_llm_flags(cli: &Cli) -> bool {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     dotenvy::dotenv().ok();
 
