@@ -22,6 +22,13 @@ attribution block required for direct merges — git history carries authorship.
 - **Adaptations**: <brief note>
 -->
 
+## benchmark corpus seed (targets_1000.txt)
+
+- **Source**: https://github.com/0xMassi/webclaw (AGPL-3.0), `targets_1000.txt` at root
+- **Used in**: `benchmarks/targets_1000.txt`
+- **Adaptations**: None (verbatim copy). 1000 URLs in `name|url|labels` format used as benchmark corpus seed — fork can sample/filter subsets, harness is fork-specific.
+- **Why attribution tracked explicitly** even though upstream is same AGPL-3.0: the file contains curated third-party URL selection (Nike, Amazon, StockX, etc.) — upstream's editorial effort, acknowledge.
+
 ## CJK punctuation heuristic (score_node)
 
 - **Source**: https://github.com/spider-rs/readability (MIT)
