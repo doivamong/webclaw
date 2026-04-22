@@ -554,25 +554,100 @@ cargo build --release --package webclaw-mcp --package webclaw-cli
 
 ## 📊 Benchmark
 
-### Regression harness
+### Extraction regression harness (50-URL run, 2026-04-23)
 
-> *`webclaw-bench` chạy extraction trên 1 000-URL corpus. KHÔNG phải competitive benchmark — dùng để detect regression sau khi cherry-pick upstream hoặc đổi core logic.*
+> *`webclaw-bench` chạy extractor trên 1 000-URL corpus. KHÔNG phải competitive benchmark — dùng để detect regression sau khi cherry-pick upstream hoặc đổi core logic. Đo trên Windows 11, i5-12400, từ cache local (network fetch loại ra để đo pure extraction).*
+
+**Aggregate (n=50, 48 ok / 2 network-fail):**
+
+| Metric | Value |
+|:-------|:------|
+| **Readable rate** (`is_probably_readable`) | 26 / 50 = **52.0%** |
+| **Avg word count** (pages đọc được) | 674 words |
+| **Avg extraction time** (pure, from cache) | **30.5 ms** |
+| **50-URL e2e extract wall time** (cached) | **1.47 s** → ~29 ms/URL |
+| **Label match rate** (heuristic, 3 labels/URL) | 34.0% |
+| **Cold-cache full run** (fetch 47 URLs + extract) | ~62 s (~1.3 s/URL incl. network) |
+
+**Per-category breakdown:**
+
+| Category | n | Readable | Avg words | Avg ms | Label % |
+|:---------|--:|:--------:|--------:|------:|-------:|
+| News / Tech media | 8 | 6/8 | 929 | 59.8 | 57.1% |
+| Jobs | 4 | 2/4 | 1 162 | 20.2 | 33.3% |
+| Tickets / Events | 4 | 2/4 | 986 | 20.2 | 41.7% |
+| E-commerce (PDP + category) | 20 | 11/20 | 740 | 34.5 | 31.7% |
+| Real estate | 4 | 3/4 | 139 | 9.8 | 33.3% |
+| Travel / Hotels | 6 | 1/6 | 162 | 14.2 | 22.2% |
+| Social | 2 | 1/2 | 12 | 4.5 | 0.0% |
+
+<details>
+<summary><b>📈 Per-URL detail — top performers + failure modes</b></summary>
+
+<br>
+
+**Top 5 word count** (scoring chọn đúng DOM root):
+
+| Words | Extract ms | Label match | URL |
+|------:|----------:|:-----------:|:----|
+| 5 070 | 146 | 1/3 | Wayfair furniture PDP |
+| 4 636 | 117 | 2/3 | Amazon US B0CX23V2ZK |
+| 3 705 | 57 | 2/3 | Glassdoor jobs SRCH |
+| 2 370 | 118 | 2/3 | Amazon DE B09V3KXJPB |
+| 2 292 | 27 | 3/3 | TechCrunch homepage |
+
+**Top 5 slowest extraction:**
+
+| ms | Words | URL |
+|---:|-----:|:----|
+| 306 | 1 085 | CNN tech (heavy DOM + scoring pass) |
+| 146 | 5 070 | Wayfair (large PDP) |
+| 118 | 2 370 | Amazon DE |
+| 117 | 4 636 | Amazon US |
+| 83 | 682 | Nike Women listing |
+
+**Câu chuyện của 22 URL "not readable"** (word count ≤20):
+
+Hầu hết là **SPA + auth wall / bot protection**, không phải bug extractor:
+- **Social (2/2)**: Instagram, Pinterest, TikTok → SPA, yêu cầu login
+- **Travel (5/6)**: Booking / Expedia / Airbnb / Hotels.com / Tripadvisor → SSR ít text + JS lazy load
+- **Retail PDP**: StockX / Walmart / Nordstrom / Etsy / Lowes / Macys / Sephora → client-rendered prices, SSR shell empty
+- **Jobs SPA**: Indeed / ZipRecruiter → kết quả fetch qua AJAX
+- **News paywalls**: WSJ / Reuters → teaser only
+- **Ticketing SPA**: Viagogo / StubHub → search kết quả render JS
+
+Extractor đúng khi **không** cố parse noise — trả `readable=NO` là behavior mong đợi. Để lấy data thật từ SPA, dùng `WEBCLAW_API_KEY` (cloud bot-bypass) hoặc `crates/webclaw-core` QuickJS feature cho data island.
+
+</details>
+
+### Regression workflow
 
 ```bash
-# 20 URLs, fetch + cache
+# 20 URLs, fetch + cache (lần đầu đủ chạy)
 cargo run --release -p webclaw-bench
 
-# Filter theo label
+# Filter theo label (e-commerce only)
 cargo run --release -p webclaw-bench -- --filter nike,amazon,stockx
 
-# 50 URLs từ cache (sau lần đầu)
+# 50 URLs từ cache (sau lần đầu — nhanh, không network)
 cargo run --release -p webclaw-bench -- --sample 50 --from-cache
 
 # Full 1 000 URLs (10+ phút lần đầu)
 cargo run --release -p webclaw-bench -- --sample 0
 ```
 
-Output: `benchmarks/baseline-<ts>.json` với `readable_count`, `avg_word_count`, `avg_extraction_ms`, `label_match_rate`, per-URL outcome. Cache HTML tại `benchmarks/cache/` để tái chạy nhanh.
+Output: `benchmarks/baseline-<ts>.json` — `readable_count`, `avg_word_count`, `avg_extraction_ms`, `label_match_rate`, per-URL outcome. Cache HTML tại `benchmarks/cache/` (gitignored).
+
+<details>
+<summary><b>⚠ Windows stack-overflow workaround</b></summary>
+
+<br>
+
+Harness host tokio runtime trên thread 8 MB stack (thay vì `#[tokio::main]` default) vì wreq BoringSSL TLS handshake + async state machine từ per-target fetch loop vượt quá Windows main thread stack mặc định (1 MB) sau khi 3-4 URL được xử lý. Fix nằm ở `crates/webclaw-bench/src/main.rs` — `std::thread::Builder::new().stack_size(8 * 1024 * 1024)` wrap quanh `tokio::runtime::Builder::new_multi_thread()`.
+
+CLI (`webclaw`) không gặp vấn đề này vì chỉ fetch 1 URL mỗi lần invocation → state machine không tích lũy.
+
+</details>
 
 ### Search vs Claude Code built-in (3 queries)
 

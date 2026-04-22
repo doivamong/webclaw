@@ -369,8 +369,7 @@ fn print_report(report: &Report) {
     println!("label match rate: {:.1}%", report.label_match_rate * 100.0);
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn async_main() -> Result<()> {
     let args = Args::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -412,4 +411,24 @@ async fn main() -> Result<()> {
     println!("\nbaseline saved: {}", output_path.display());
 
     Ok(())
+}
+
+// Host the runtime on an explicitly-sized thread. wreq's BoringSSL handshake
+// combined with async state machines from the per-target loop exceeds the
+// Windows default 1 MB main-thread stack once multiple `client.fetch()` calls
+// are in flight — see `benchmarks/README.md` troubleshooting.
+fn main() -> Result<()> {
+    std::thread::Builder::new()
+        .name("webclaw-bench-main".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime")
+                .block_on(async_main())
+        })
+        .expect("spawn bench main thread")
+        .join()
+        .expect("bench main thread panicked")
 }
