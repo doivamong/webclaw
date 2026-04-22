@@ -57,22 +57,27 @@ webclaw-cli ─┐
 
 ## Patch isolation
 
-`[patch.crates-io]` chỉ ở **workspace root** `Cargo.toml`, KHÔNG ở crate-level.
+Nếu cần `[patch.crates-io]` — chỉ ở **workspace root** `Cargo.toml`, KHÔNG ở crate-level.
 
 ### Lý do
-- primp/wreq patched rustls/h2 forks cần apply toàn workspace đồng bộ
+- Patched dep forks cần apply toàn workspace đồng bộ
 - Patch ở crate-level → cargo resolve conflict, build fail
 - Workspace-level → tất cả crate dùng cùng version patched
+
+### Hiện tại
+Fork dùng `wreq 6.0.0-rc.28` (upstream `penumbra-x/wreq`) — self-contained BoringSSL build, không cần `[patch.crates-io]`. Workspace root `Cargo.toml` KHÔNG có patch section.
+
+Legacy reference: dự án từng evaluate `primp` crate — yêu cầu patched rustls/h2 forks. Đã thay bằng wreq.
 
 ### Check
 ```bash
 grep -n 'patch.crates-io' D:/webclaw/crates/*/Cargo.toml
-# Expected: no match (chỉ workspace root được phép)
+# Expected: no match (chỉ workspace root được phép nếu sau này cần)
 ```
 
 ## webclaw-llm: plain reqwest only
 
-`crates/webclaw-llm/` dùng **plain `reqwest`**, KHÔNG dùng `wreq`/`primp`.
+`crates/webclaw-llm/` dùng **plain `reqwest`**, KHÔNG dùng `wreq`.
 
 ### Lý do
 - LLM APIs (OpenAI, Anthropic, Ollama) không có bot protection / TLS fingerprinting
@@ -81,7 +86,7 @@ grep -n 'patch.crates-io' D:/webclaw/crates/*/Cargo.toml
 
 ### Check
 ```
-grep -l 'wreq\|primp' crates/webclaw-llm/Cargo.toml crates/webclaw-llm/src/**/*.rs
+grep -l 'wreq' crates/webclaw-llm/Cargo.toml crates/webclaw-llm/src/**/*.rs
 # Expected: no match
 ```
 
@@ -145,7 +150,7 @@ grep -rn 'patch.crates-io' crates/*/Cargo.toml
 # Expected: no output
 
 # Check reqwest vs wreq in llm
-cargo tree -p webclaw-llm | grep -E 'wreq|primp'
+cargo tree -p webclaw-llm | grep -E 'wreq'
 # Expected: no output
 ```
 

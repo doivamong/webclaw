@@ -11,7 +11,7 @@ webclaw/
                       # + ExtractionOptions (include/exclude CSS selectors)
                       # + diff engine (change tracking)
                       # + brand extraction (DOM/CSS analysis)
-    webclaw-fetch/    # HTTP client via primp. Crawler. Sitemap discovery. Batch ops.
+    webclaw-fetch/    # HTTP client via wreq (BoringSSL TLS impersonation). Crawler. Sitemap discovery. Batch ops.
                       # + proxy pool rotation (per-request)
                       # + PDF content-type detection
                       # + document parsing (DOCX, XLSX, CSV)
@@ -38,7 +38,7 @@ Two binaries: `webclaw` (CLI), `webclaw-mcp` (MCP server).
 - `brand.rs` — Brand identity extraction from DOM structure and CSS
 
 ### Fetch Modules (`webclaw-fetch`)
-- `client.rs` — FetchClient with primp TLS impersonation
+- `client.rs` — FetchClient with wreq TLS impersonation (BoringSSL-based)
 - `browser.rs` — Browser profiles: Chrome (142/136/133/131), Firefox (144/135/133/128)
 - `crawler.rs` — BFS same-origin crawler with configurable depth/concurrency/delay
 - `sitemap.rs` — Sitemap discovery and parsing (sitemap.xml, robots.txt)
@@ -63,9 +63,9 @@ Two binaries: `webclaw` (CLI), `webclaw-mcp` (MCP server).
 ## Hard Rules
 
 - **Core has ZERO network dependencies** — takes `&str` HTML, returns structured output. Keep it WASM-compatible.
-- **primp requires `[patch.crates-io]`** for patched rustls/h2 forks at workspace level.
+- **webclaw-fetch uses wreq 6.0** — self-contained BoringSSL build. No `[patch.crates-io]` required at workspace root.
 - **RUSTFLAGS are set in `.cargo/config.toml`** — no need to pass manually.
-- **webclaw-llm uses plain reqwest** (NOT primp-patched). LLM APIs don't need TLS fingerprinting.
+- **webclaw-llm uses plain reqwest** (NOT wreq). LLM APIs don't need TLS fingerprinting.
 - **qwen3 thinking tags** (`<think>`) are stripped at both provider and consumer levels.
 
 ## Tool Routing (MCP)
