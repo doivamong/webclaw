@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use ego_tree::NodeId;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 use tracing::{debug, warn};
 use url::Url;
@@ -31,6 +32,16 @@ static MAIN_CONTENT_SELECTOR: Lazy<Selector> =
     Lazy::new(|| Selector::parse("article, main, [role='main']").unwrap());
 
 const MAX_SELECTORS: usize = 100;
+
+/// CJK sentence-ending punctuation. Used as a proxy for "sentence count" in
+/// score_node() — the default score heuristics count only Latin punctuation
+/// (`.!?`) which undercounts Japanese/Chinese/Korean articles.
+///
+/// Adapted from github.com/spider-rs/readability (MIT) — PUNCTUATIONS_REGEX
+/// idea. Regex simplified to CJK-only here; Latin punctuation already handled
+/// by score_node text_len heuristics.
+static CJK_PUNCTUATIONS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[、。，．！？]").unwrap());
 
 /// Build a HashSet of NodeIds to exclude based on CSS selector strings.
 /// Invalid selectors are skipped with a warning.
@@ -843,6 +854,14 @@ fn score_node(el: ElementRef<'_>) -> f64 {
         }
     }
 
+    // CJK bonus: Latin-punctuation-only heuristics under-score Japanese /
+    // Chinese / Korean articles. Count CJK sentence terminators and add a
+    // capped bonus (max +10) so CJK content competes with English.
+    let cjk_count = CJK_PUNCTUATIONS.find_iter(&text).count() as f64;
+    if cjk_count > 0.0 {
+        score += cjk_count.min(10.0);
+    }
+
     score
 }
 
@@ -896,6 +915,28 @@ mod tests {
         let doc = parse(html);
         let content = extract_default(&doc, None);
         assert!(content.plain_text.contains("Simple page"));
+    }
+
+    #[test]
+    fn cjk_punctuation_lifts_score() {
+        let html_en = r##"<html><body><article>
+            <p>A short English line.</p>
+        </article></body></html>"##;
+        let html_ja = r##"<html><body><article>
+            <p>これは短い日本語の文章です。これはテスト、さらに文章！</p>
+        </article></body></html>"##;
+        let en_doc = parse(html_en);
+        let ja_doc = parse(html_ja);
+        let en = extract_default(&en_doc, None);
+        let ja = extract_default(&ja_doc, None);
+        assert!(
+            !en.markdown.is_empty() && !ja.markdown.is_empty(),
+            "both languages should produce output"
+        );
+        assert!(
+            ja.plain_text.contains("日本語"),
+            "CJK content preserved in output"
+        );
     }
 
     #[test]

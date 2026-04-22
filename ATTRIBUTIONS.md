@@ -22,7 +22,12 @@ attribution block required for direct merges — git history carries authorship.
 - **Adaptations**: <brief note>
 -->
 
-_No non-upstream ports yet._
+## CJK punctuation heuristic (score_node)
+
+- **Source**: https://github.com/spider-rs/readability (MIT)
+- **Original**: `src/scorer.rs:21` — `PUNCTUATIONS_REGEX`
+- **Used in**: `crates/webclaw-core/src/extractor.rs` (`CJK_PUNCTUATIONS` static + bonus logic in `score_node`)
+- **Adaptations**: Regex simplified to CJK-only (`[、。，．！？]`). Latin punctuation already handled by text-length heuristics. Bonus capped at +10 so CJK content competes with English without overwhelming other signals.
 
 ## Reference-only studies
 
