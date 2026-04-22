@@ -24,3 +24,6 @@ rquickjs = { version = "0.9", features = ["classes", "properties"], optional = t
 
 [dev-dependencies]
 tokio = { workspace = true }
+
+[lints]
+workspace = true
