@@ -34,6 +34,9 @@ impl std::fmt::Display for DocType {
 
 /// Detect document type from response headers or URL extension.
 /// Returns `None` for non-document responses (HTML, PDF, etc.).
+#[must_use]
+// ends_with comparisons below run on a pre-lowercased string.
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 pub fn is_document_content_type(headers: &http::HeaderMap, url: &str) -> Option<DocType> {
     // Check Content-Type header first
     if let Some(ct) = headers.get("content-type").and_then(|v| v.to_str().ok()) {
@@ -77,7 +80,12 @@ pub fn is_document_content_type(headers: &http::HeaderMap, url: &str) -> Option<
     None
 }
 
-/// Extract text content from document bytes, returning an ExtractionResult.
+/// Extract text content from document bytes, returning an `ExtractionResult`.
+///
+/// # Errors
+///
+/// Returns `FetchError::Build` if parsing the document bytes fails (invalid format,
+/// corrupted archive, encoding error, etc.).
 pub fn extract_document(
     bytes: &[u8],
     doc_type: DocType,
@@ -92,7 +100,7 @@ pub fn extract_document(
         DocType::Docx => extract_docx(bytes)?,
         DocType::Xlsx => extract_xlsx(bytes)?,
         DocType::Xls => extract_xls(bytes)?,
-        DocType::Csv => extract_csv(bytes)?,
+        DocType::Csv => extract_csv(bytes),
     };
 
     let plain_text = strip_markdown_formatting(&markdown);
@@ -165,7 +173,7 @@ fn parse_docx_xml(xml: &str) -> Result<String, FetchError> {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 let name_bytes = e.name().as_ref().to_vec();
                 let local = local_name(&name_bytes);
                 match local {
@@ -291,7 +299,7 @@ fn extract_spreadsheet(bytes: &[u8], label: &str) -> Result<String, FetchError> 
     let mut workbook: calamine::Sheets<_> = calamine::open_workbook_auto_from_rs(cursor)
         .map_err(|e| FetchError::Build(format!("{label} open: {e}")))?;
 
-    let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
+    let sheet_names: Vec<String> = workbook.sheet_names().clone();
     let mut sections: Vec<String> = Vec::new();
 
     for name in &sheet_names {
@@ -325,19 +333,19 @@ fn cell_to_string(cell: &calamine::Data) -> String {
     use calamine::Data;
     match cell {
         Data::Empty => String::new(),
-        Data::String(s) => s.clone(),
+        Data::String(s) | Data::DateTimeIso(s) | Data::DurationIso(s) => s.clone(),
         Data::Int(n) => n.to_string(),
         Data::Float(f) => format_float(*f),
         Data::Bool(b) => b.to_string(),
         Data::Error(e) => format!("#{e:?}"),
         Data::DateTime(dt) => format!("{dt}"),
-        Data::DateTimeIso(s) => s.clone(),
-        Data::DurationIso(s) => s.clone(),
     }
 }
 
 /// Format a float, dropping trailing `.0` for clean integer display.
 fn format_float(f: f64) -> String {
+    // Bounded by i64::MAX comparison — cast is safe.
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     if f.fract() == 0.0 && f.abs() < i64::MAX as f64 {
         format!("{}", f as i64)
     } else {
@@ -346,15 +354,15 @@ fn format_float(f: f64) -> String {
 }
 
 /// Extract CSV text and convert to markdown table.
-fn extract_csv(bytes: &[u8]) -> Result<String, FetchError> {
+fn extract_csv(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     let rows = parse_csv_rows(&text);
 
     if rows.is_empty() {
-        return Ok("(empty CSV)".to_string());
+        return "(empty CSV)".to_string();
     }
 
-    Ok(rows_to_markdown_table(&rows))
+    rows_to_markdown_table(&rows)
 }
 
 /// Parse CSV text into rows of fields, handling quoted fields with commas/newlines.
@@ -388,7 +396,7 @@ fn parse_csv_rows(text: &str) -> Vec<Vec<String>> {
                 '\n' => {
                     current_row.push(current_field.trim().to_string());
                     current_field = String::new();
-                    if !current_row.iter().all(|f| f.is_empty()) {
+                    if !current_row.iter().all(std::string::String::is_empty) {
                         rows.push(current_row);
                     }
                     current_row = Vec::new();
@@ -404,7 +412,7 @@ fn parse_csv_rows(text: &str) -> Vec<Vec<String>> {
     // Flush last field/row
     if !current_field.is_empty() || !current_row.is_empty() {
         current_row.push(current_field.trim().to_string());
-        if !current_row.iter().all(|f| f.is_empty()) {
+        if !current_row.iter().all(std::string::String::is_empty) {
             rows.push(current_row);
         }
     }
@@ -419,7 +427,7 @@ fn rows_to_markdown_table(rows: &[Vec<String>]) -> String {
     }
 
     // Find the max column count across all rows
-    let col_count = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let col_count = rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
     if col_count == 0 {
         return String::new();
     }
@@ -429,7 +437,7 @@ fn rows_to_markdown_table(rows: &[Vec<String>]) -> String {
     // Header row
     let header = &rows[0];
     let header_cells: Vec<&str> = (0..col_count)
-        .map(|i| header.get(i).map(|s| s.as_str()).unwrap_or(""))
+        .map(|i| header.get(i).map_or("", std::string::String::as_str))
         .collect();
     lines.push(format!("| {} |", header_cells.join(" | ")));
 
@@ -440,7 +448,7 @@ fn rows_to_markdown_table(rows: &[Vec<String>]) -> String {
     // Data rows
     for row in &rows[1..] {
         let cells: Vec<&str> = (0..col_count)
-            .map(|i| row.get(i).map(|s| s.as_str()).unwrap_or(""))
+            .map(|i| row.get(i).map_or("", std::string::String::as_str))
             .collect();
         lines.push(format!("| {} |", cells.join(" | ")));
     }
@@ -460,7 +468,7 @@ fn strip_markdown_formatting(markdown: &str) -> String {
             && let Some(stripped) = stripped.strip_suffix('|')
         {
             // Table row: join cells with spaces
-            let cells: Vec<&str> = stripped.split('|').map(|c| c.trim()).collect();
+            let cells: Vec<&str> = stripped.split('|').map(str::trim).collect();
             plain.push_str(&cells.join(" "));
             plain.push('\n');
             continue;
@@ -601,7 +609,7 @@ mod tests {
     #[test]
     fn test_csv_simple() {
         let csv = "Name,Age,City\nAlice,30,NYC\nBob,25,LA\n";
-        let result = extract_csv(csv.as_bytes()).unwrap();
+        let result = extract_csv(csv.as_bytes());
         assert!(result.contains("| Name | Age | City |"));
         assert!(result.contains("| --- | --- | --- |"));
         assert!(result.contains("| Alice | 30 | NYC |"));
@@ -611,21 +619,21 @@ mod tests {
     #[test]
     fn test_csv_quoted_fields() {
         let csv = "Name,Description\nAlice,\"Has a, comma\"\nBob,\"Said \"\"hello\"\"\"\n";
-        let result = extract_csv(csv.as_bytes()).unwrap();
+        let result = extract_csv(csv.as_bytes());
         assert!(result.contains("Has a, comma"));
         assert!(result.contains("Said \"hello\""));
     }
 
     #[test]
     fn test_csv_empty() {
-        let result = extract_csv(b"").unwrap();
+        let result = extract_csv(b"");
         assert_eq!(result, "(empty CSV)");
     }
 
     #[test]
     fn test_csv_windows_line_endings() {
         let csv = "A,B\r\n1,2\r\n3,4\r\n";
-        let result = extract_csv(csv.as_bytes()).unwrap();
+        let result = extract_csv(csv.as_bytes());
         assert!(result.contains("| A | B |"));
         assert!(result.contains("| 1 | 2 |"));
     }

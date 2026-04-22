@@ -10,6 +10,7 @@ use crate::error::FetchError;
 /// Accepts two formats:
 /// - `host:port:user:pass` -> `http://user:pass@host:port`
 /// - `host:port` -> `http://host:port`
+#[must_use]
 pub fn parse_proxy_line(line: &str) -> Option<String> {
     let parts: Vec<&str> = line.trim().splitn(4, ':').collect();
     match parts.len() {
@@ -24,8 +25,11 @@ pub fn parse_proxy_line(line: &str) -> Option<String> {
 
 /// Load proxies from a file, returning parsed HTTP proxy URLs.
 ///
-/// Skips blank lines and `#` comments. Returns an error if the file
-/// can't be read or contains no valid entries.
+/// Skips blank lines and `#` comments.
+///
+/// # Errors
+///
+/// Returns `FetchError::Build` if the file cannot be read or contains no valid entries.
 pub fn parse_proxy_file(path: &str) -> Result<Vec<String>, FetchError> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| FetchError::Build(format!("failed to read proxy file: {e}")))?;

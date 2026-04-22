@@ -1,5 +1,5 @@
 //! Browser fingerprint selection and rotation.
-//! Maps our BrowserProfile enum to webclaw-http client builder methods.
+//! Maps our `BrowserProfile` enum to webclaw-http client builder methods.
 
 /// Which browser identity to present at the TLS/HTTP layer.
 #[derive(Debug, Clone, Default)]
@@ -22,16 +22,19 @@ pub enum BrowserVariant {
 }
 
 /// All Chrome variants we ship.
+#[must_use]
 pub fn chrome_variants() -> Vec<BrowserVariant> {
     vec![BrowserVariant::Chrome, BrowserVariant::ChromeMacos]
 }
 
 /// All Firefox variants we ship.
+#[must_use]
 pub fn firefox_variants() -> Vec<BrowserVariant> {
     vec![BrowserVariant::Firefox]
 }
 
 /// All variants for maximum diversity in Random mode.
+#[must_use]
 pub fn all_variants() -> Vec<BrowserVariant> {
     vec![
         BrowserVariant::Chrome,
@@ -42,10 +45,12 @@ pub fn all_variants() -> Vec<BrowserVariant> {
     ]
 }
 
+#[must_use]
 pub fn latest_chrome() -> BrowserVariant {
     BrowserVariant::Chrome
 }
 
+#[must_use]
 pub fn latest_firefox() -> BrowserVariant {
     BrowserVariant::Firefox
 }

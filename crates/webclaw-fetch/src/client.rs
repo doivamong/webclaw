@@ -1,5 +1,5 @@
 /// HTTP client with browser TLS fingerprint impersonation.
-/// Uses wreq (BoringSSL) for browser-grade TLS + HTTP/2 fingerprinting.
+/// Uses wreq (`BoringSSL`) for browser-grade TLS + HTTP/2 fingerprinting.
 /// Supports single and batch operations with proxy rotation.
 /// Automatically detects PDF responses and extracts text via webclaw-pdf.
 ///
@@ -79,7 +79,7 @@ pub struct BatchExtractResult {
 }
 
 /// Buffered response that owns its body. Provides the same sync API
-/// that webclaw-http::Response used to provide.
+/// that `webclaw-http::Response` used to provide.
 struct Response {
     status: u16,
     url: String,
@@ -157,6 +157,17 @@ pub struct FetchClient {
 
 impl FetchClient {
     /// Build a new client from config.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FetchError::Build` if the underlying TLS client fails to initialize
+    /// (invalid proxy URL, TLS config error, or header construction failure).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `config.browser == Random` and the internal browser variant list is empty,
+    /// which cannot happen in normal builds but would indicate a logic bug in `collect_variants`.
+    #[allow(clippy::needless_pass_by_value)] // builder-style consumption API
     pub fn new(config: FetchConfig) -> Result<Self, FetchError> {
         let variants = collect_variants(&config.browser);
         let pdf_mode = config.pdf_mode.clone();
@@ -208,6 +219,11 @@ impl FetchClient {
     ///
     /// Automatically retries on transient failures (network errors, 5xx, 429)
     /// with exponential backoff: 0s, 1s, 3s (3 attempts total).
+    ///
+    /// # Errors
+    ///
+    /// Returns `FetchError::Request` on network failure after all retries exhausted,
+    /// or `FetchError::Build` if the response status is retryable but retries were exhausted.
     #[instrument(skip(self), fields(url = %url))]
     pub async fn fetch(&self, url: &str) -> Result<FetchResult, FetchError> {
         let delays = [
@@ -264,10 +280,15 @@ impl FetchClient {
 
         let resp = client.get(url).send().await?;
         let response = Response::from_wreq(resp).await?;
-        response_to_result(response, start)
+        Ok(response_to_result(response, start))
     }
 
     /// Fetch a URL then extract structured content.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FetchError::Request` on network failure, or propagates errors from the
+    /// underlying `fetch` call. Extraction itself does not fail.
     #[instrument(skip(self), fields(url = %url))]
     pub async fn fetch_and_extract(
         &self,
@@ -278,6 +299,11 @@ impl FetchClient {
     }
 
     /// Fetch a URL then extract structured content with custom extraction options.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FetchError::Request` on network failure. PDF extraction failures
+    /// return `FetchError::Build` with the underlying reason.
     #[instrument(skip(self, options), fields(url = %url))]
     pub async fn fetch_and_extract_with_options(
         &self,
@@ -380,6 +406,10 @@ impl FetchClient {
     }
 
     /// Fetch multiple URLs concurrently with bounded parallelism.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal semaphore is closed (should not occur in practice).
     pub async fn fetch_batch(
         self: &Arc<Self>,
         urls: &[&str],
@@ -418,6 +448,10 @@ impl FetchClient {
     }
 
     /// Fetch and extract multiple URLs concurrently with custom extraction options.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal semaphore is closed (should not occur in practice).
     pub async fn fetch_and_extract_batch_with_options(
         self: &Arc<Self>,
         urls: &[&str],
@@ -444,6 +478,7 @@ impl FetchClient {
     }
 
     /// Returns the number of proxies in the rotation pool, or 0 if static mode.
+    #[must_use]
     pub fn proxy_pool_size(&self) -> usize {
         match &self.pool {
             ClientPool::Static { .. } => 0,
@@ -476,8 +511,8 @@ fn collect_variants(profile: &BrowserProfile) -> Vec<BrowserVariant> {
     }
 }
 
-/// Convert a buffered Response into a FetchResult.
-fn response_to_result(response: Response, start: Instant) -> Result<FetchResult, FetchError> {
+/// Convert a buffered Response into a `FetchResult`.
+fn response_to_result(response: Response, start: Instant) -> FetchResult {
     let status = response.status();
     let final_url = response.url().to_string();
     let headers = response.headers().clone();
@@ -486,13 +521,13 @@ fn response_to_result(response: Response, start: Instant) -> Result<FetchResult,
 
     debug!(status, elapsed_ms = %elapsed.as_millis(), "fetch complete");
 
-    Ok(FetchResult {
+    FetchResult {
         html,
         status,
         url: final_url,
         headers,
         elapsed,
-    })
+    }
 }
 
 /// Extract the host from a URL, returning empty string on parse failure.
@@ -508,6 +543,8 @@ fn extract_host(url: &str) -> String {
 fn pick_for_host<'a>(clients: &'a [wreq::Client], host: &str) -> &'a wreq::Client {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     host.hash(&mut hasher);
+    // Hash bucket selection — wrap is fine on 32-bit targets.
+    #[allow(clippy::cast_possible_truncation)]
     let idx = (hasher.finish() as usize) % clients.len();
     &clients[idx]
 }
@@ -541,11 +578,10 @@ fn is_pdf_content_type(headers: &http::HeaderMap) -> bool {
     headers
         .get("content-type")
         .and_then(|ct| ct.to_str().ok())
-        .map(|ct| {
+        .is_some_and(|ct| {
             let mime = ct.split(';').next().unwrap_or("").trim();
             mime.eq_ignore_ascii_case("application/pdf")
         })
-        .unwrap_or(false)
 }
 
 /// Detect if a response looks like a bot protection challenge page.
@@ -576,7 +612,7 @@ fn extract_homepage(url: &str) -> Option<String> {
         .map(|u| format!("{}://{}/", u.scheme(), u.host_str().unwrap_or("")))
 }
 
-/// Convert a webclaw-pdf PdfResult into a webclaw-core ExtractionResult.
+/// Convert a webclaw-pdf `PdfResult` into a webclaw-core `ExtractionResult`.
 fn pdf_to_extraction_result(
     pdf: &webclaw_pdf::PdfResult,
     url: &str,

@@ -21,6 +21,13 @@ use crate::client::{FetchClient, FetchConfig};
 use crate::error::FetchError;
 use crate::sitemap;
 
+/// Common non-HTML file extensions skipped during link qualification.
+const SKIP_EXTENSIONS: &[&str] = &[
+    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".css", ".js", ".zip",
+    ".tar", ".gz", ".xml", ".rss", ".mp3", ".mp4", ".avi", ".mov", ".woff", ".woff2", ".ttf",
+    ".eot",
+];
+
 /// Controls crawl scope, depth, concurrency, and politeness.
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
@@ -41,7 +48,7 @@ pub struct CrawlConfig {
     /// Glob patterns for paths to include. If non-empty, only matching URLs are crawled.
     /// E.g. `["/api/*", "/guides/*"]` — matched against the URL path.
     pub include_patterns: Vec<String>,
-    /// Glob patterns for paths to exclude. Checked after include_patterns.
+    /// Glob patterns for paths to exclude. Checked after `include_patterns`.
     /// E.g. `["/changelog/*", "/blog/*"]` — matching URLs are skipped.
     pub exclude_patterns: Vec<String>,
     /// Optional channel sender for streaming per-page results as they complete.
@@ -118,6 +125,11 @@ pub struct Crawler {
 impl Crawler {
     /// Build a new crawler from a seed URL and config.
     /// Constructs the underlying `FetchClient` from `config.fetch`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FetchError::InvalidUrl` if `seed_url` cannot be parsed, or any
+    /// `FetchError` produced by the underlying `FetchClient::new` call.
     pub fn new(seed_url: &str, config: CrawlConfig) -> Result<Self, FetchError> {
         let seed = Url::parse(seed_url).map_err(|_| FetchError::InvalidUrl(seed_url.into()))?;
         let seed_origin = origin_key(&seed);
@@ -132,6 +144,11 @@ impl Crawler {
     }
 
     /// Save current crawl state to a JSON file for later resume.
+    ///
+    /// # Errors
+    ///
+    /// Returns a human-readable error string on JSON serialization failure
+    /// or filesystem write failure.
     pub fn save_state(
         path: &Path,
         seed_url: &str,
@@ -155,6 +172,7 @@ impl Crawler {
     }
 
     /// Load crawl state from a JSON file. Returns `None` if file doesn't exist.
+    #[must_use]
     pub fn load_state(path: &Path) -> Option<CrawlState> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
@@ -178,28 +196,31 @@ impl Crawler {
     ///
     /// If `resume_state` is provided, the crawl resumes from the saved state
     /// (pre-populated visited set and frontier) instead of starting fresh.
+    ///
+    /// # Panics
+    ///
+    /// Panics only on internal logic bugs (the internal semaphore being closed,
+    /// which should not occur in practice).
+    #[allow(clippy::too_many_lines)]
     pub async fn crawl(&self, start_url: &str, resume_state: Option<CrawlState>) -> CrawlResult {
         let start = Instant::now();
 
-        let seed = match Url::parse(start_url) {
-            Ok(u) => u,
-            Err(_) => {
-                return CrawlResult {
-                    pages: vec![PageResult {
-                        url: start_url.to_string(),
-                        depth: 0,
-                        extraction: None,
-                        error: Some(format!("invalid URL: {start_url}")),
-                        elapsed: Duration::ZERO,
-                    }],
-                    total: 1,
-                    ok: 0,
-                    errors: 1,
-                    elapsed_secs: 0.0,
-                    visited: HashSet::new(),
-                    remaining_frontier: Vec::new(),
-                };
-            }
+        let Ok(seed) = Url::parse(start_url) else {
+            return CrawlResult {
+                pages: vec![PageResult {
+                    url: start_url.to_string(),
+                    depth: 0,
+                    extraction: None,
+                    error: Some(format!("invalid URL: {start_url}")),
+                    elapsed: Duration::ZERO,
+                }],
+                total: 1,
+                ok: 0,
+                errors: 1,
+                elapsed_secs: 0.0,
+                visited: HashSet::new(),
+                remaining_frontier: Vec::new(),
+            };
         };
 
         let semaphore = Arc::new(Semaphore::new(self.config.concurrency));
@@ -228,9 +249,8 @@ impl Crawler {
                         let before = frontier.len();
                         for entry in entries {
                             if self.qualify_link(&entry.url, &visited).is_some() {
-                                let parsed = match Url::parse(&entry.url) {
-                                    Ok(u) => u,
-                                    Err(_) => continue,
+                                let Ok(parsed) = Url::parse(&entry.url) else {
+                                    continue;
                                 };
                                 let norm = normalize(&parsed);
                                 frontier.push((norm, 0));
@@ -426,12 +446,6 @@ impl Crawler {
             return None;
         }
 
-        // Skip common non-page file extensions
-        const SKIP_EXTENSIONS: &[&str] = &[
-            ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".css", ".js",
-            ".zip", ".tar", ".gz", ".xml", ".rss", ".mp3", ".mp4", ".avi", ".mov", ".woff",
-            ".woff2", ".ttf", ".eot",
-        ];
         if SKIP_EXTENSIONS.iter().any(|ext| path.ends_with(ext)) {
             return None;
         }
@@ -446,7 +460,7 @@ impl Crawler {
     }
 }
 
-/// Canonical origin string for comparing same-origin: "scheme://host[:port]".
+/// Canonical origin string for comparing same-origin: "<scheme://host>[:port]".
 fn origin_key(url: &Url) -> String {
     let port_suffix = match url.port() {
         Some(p) => format!(":{p}"),
@@ -494,6 +508,7 @@ fn glob_match(pattern: &str, path: &str) -> bool {
     glob_match_inner(pattern.as_bytes(), path.as_bytes())
 }
 
+#[allow(clippy::similar_names)] // pi/ti, star_pi/star_ti are idiomatic glob-match indices
 fn glob_match_inner(pat: &[u8], text: &[u8]) -> bool {
     let mut pi = 0;
     let mut ti = 0;

@@ -5,7 +5,7 @@
 /// 2. Try /sitemap.xml as fallback
 /// 3. Recursively resolve sitemap index files
 ///
-/// All HTTP requests go through FetchClient to inherit TLS fingerprinting.
+/// All HTTP requests go through `FetchClient` to inherit TLS fingerprinting.
 use std::collections::HashSet;
 
 use quick_xml::Reader;
@@ -38,6 +38,11 @@ pub struct SitemapEntry {
 /// 4. Deduplicate by URL
 ///
 /// Returns an empty vec (not an error) if no sitemaps are found.
+///
+/// # Errors
+///
+/// Returns `FetchError::InvalidUrl` if `base_url` cannot be parsed, or propagates
+/// underlying `FetchError` from the robots.txt / sitemap.xml HTTP calls.
 pub async fn discover(
     client: &FetchClient,
     base_url: &str,
@@ -142,6 +147,7 @@ async fn fetch_sitemaps(
 // ---------------------------------------------------------------------------
 
 /// Extract `Sitemap:` directive URLs from robots.txt content.
+#[must_use]
 pub fn parse_robots_txt(text: &str) -> Vec<String> {
     text.lines()
         .filter_map(|line| {
@@ -160,6 +166,7 @@ pub fn parse_robots_txt(text: &str) -> Vec<String> {
 
 /// Parse a sitemap XML string. Handles both `<urlset>` and `<sitemapindex>`.
 /// Returns entries from urlsets and recursion targets from indexes.
+#[must_use]
 pub fn parse_sitemap_xml(xml: &str) -> Vec<SitemapEntry> {
     match detect_sitemap_type(xml) {
         SitemapType::UrlSet => parse_urlset(xml),
@@ -195,17 +202,16 @@ fn detect_sitemap_type(xml: &str) -> SitemapType {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 let name = e.local_name();
-                return match name.as_ref() {
-                    b"urlset" => SitemapType::UrlSet,
-                    b"sitemapindex" => SitemapType::Index,
-                    _ => continue, // skip processing instructions, comments
-                };
+                match name.as_ref() {
+                    b"urlset" => return SitemapType::UrlSet,
+                    b"sitemapindex" => return SitemapType::Index,
+                    _ => {} // skip processing instructions, comments
+                }
             }
-            Ok(Event::Eof) => return SitemapType::Unknown,
-            Err(_) => return SitemapType::Unknown,
-            _ => continue,
+            Ok(Event::Eof) | Err(_) => return SitemapType::Unknown,
+            _ => {}
         }
     }
 }

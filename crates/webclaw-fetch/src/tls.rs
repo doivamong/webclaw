@@ -1,4 +1,4 @@
-//! Browser TLS + HTTP/2 fingerprint profiles built on wreq (BoringSSL).
+//! Browser TLS + HTTP/2 fingerprint profiles built on wreq (`BoringSSL`).
 //!
 //! Replaces the old webclaw-http/webclaw-tls patched rustls stack.
 //! Each profile configures TLS options (cipher suites, curves, extensions,
@@ -322,6 +322,12 @@ fn build_headers(pairs: &[(&str, &str)]) -> http::HeaderMap {
 }
 
 /// Build a wreq Client for a specific browser variant.
+///
+/// # Errors
+///
+/// Returns `FetchError::Build` if TLS config, proxy URL parsing, or header
+/// construction fails.
+#[allow(clippy::implicit_hasher)] // only ever called with the default hasher
 pub fn build_client(
     variant: BrowserVariant,
     timeout: Duration,

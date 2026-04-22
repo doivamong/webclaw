@@ -4,10 +4,12 @@
 /// loaded client-side. Appending `.json` to any Reddit URL returns the full
 /// comment tree as structured JSON, which we convert to clean markdown.
 use serde::Deserialize;
+use std::fmt::Write as _;
 use tracing::debug;
 use webclaw_core::{Content, ExtractionResult, Metadata};
 
 /// Check if a URL points to a Reddit post/comment page.
+#[must_use]
 pub fn is_reddit_url(url: &str) -> bool {
     let host = url
         .split("://")
@@ -23,12 +25,18 @@ pub fn is_reddit_url(url: &str) -> bool {
 }
 
 /// Build the `.json` URL from a Reddit page URL.
+#[must_use]
 pub fn json_url(url: &str) -> String {
     let clean = url.split('?').next().unwrap_or(url).trim_end_matches('/');
     format!("{clean}.json")
 }
 
-/// Convert Reddit JSON API response into an ExtractionResult.
+/// Convert Reddit JSON API response into an `ExtractionResult`.
+///
+/// # Errors
+///
+/// Returns a human-readable error string if `json_bytes` is not a valid
+/// Reddit JSON listing payload.
 pub fn parse_reddit_json(json_bytes: &[u8], url: &str) -> Result<ExtractionResult, String> {
     let listings: Vec<Listing> =
         serde_json::from_slice(json_bytes).map_err(|e| format!("reddit json parse: {e}"))?;
@@ -43,15 +51,15 @@ pub fn parse_reddit_json(json_bytes: &[u8], url: &str) -> Result<ExtractionResul
         for child in &post_listing.data.children {
             if child.kind == "t3" {
                 let d = &child.data;
-                title = d.title.clone();
-                author = d.author.clone();
-                subreddit = d.subreddit_name_prefixed.clone();
+                title.clone_from(&d.title);
+                author.clone_from(&d.author);
+                subreddit.clone_from(&d.subreddit_name_prefixed);
 
                 if let Some(ref t) = title {
-                    markdown.push_str(&format!("# {t}\n\n"));
+                    let _ = writeln!(markdown, "# {t}\n");
                 }
                 if let (Some(a), Some(sr)) = (&author, &subreddit) {
-                    markdown.push_str(&format!("**u/{a}** in {sr}\n\n"));
+                    let _ = writeln!(markdown, "**u/{a}** in {sr}\n");
                 }
                 if let Some(ref body) = d.selftext
                     && !body.is_empty()
@@ -62,7 +70,7 @@ pub fn parse_reddit_json(json_bytes: &[u8], url: &str) -> Result<ExtractionResul
                 if let Some(ref url_field) = d.url_overridden_by_dest
                     && !url_field.is_empty()
                 {
-                    markdown.push_str(&format!("[Link]({url_field})\n\n"));
+                    let _ = writeln!(markdown, "[Link]({url_field})\n");
                 }
                 markdown.push_str("---\n\n");
             }
@@ -116,9 +124,9 @@ fn render_comment(thing: &Thing, depth: usize, out: &mut String) {
     let body = d.body.as_deref().unwrap_or("[removed]");
     let score = d.score.unwrap_or(0);
 
-    out.push_str(&format!("{indent}- **u/{author}** ({score} pts)\n"));
+    let _ = writeln!(out, "{indent}- **u/{author}** ({score} pts)");
     for line in body.lines() {
-        out.push_str(&format!("{indent}  {line}\n"));
+        let _ = writeln!(out, "{indent}  {line}");
     }
     out.push('\n');
 

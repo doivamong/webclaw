@@ -1,13 +1,15 @@
-/// LinkedIn post extraction from authenticated HTML.
+/// `LinkedIn` post extraction from authenticated HTML.
 ///
-/// LinkedIn's SPA stores all data in `<code>` tags as HTML-escaped JSON.
+/// `LinkedIn`'s SPA stores all data in `<code>` tags as HTML-escaped JSON.
 /// The `included` array contains typed entities: Update (post), Comment,
 /// Profile, etc. We parse these to reconstruct post + comments as markdown.
 use serde_json::Value;
+use std::fmt::Write as _;
 use tracing::debug;
 use webclaw_core::{Content, ExtractionResult, Metadata};
 
-/// Check if a URL is a LinkedIn post/activity.
+/// Check if a URL is a `LinkedIn` post/activity.
+#[must_use]
 pub fn is_linkedin_post(url: &str) -> bool {
     let host = url
         .split("://")
@@ -21,7 +23,7 @@ pub fn is_linkedin_post(url: &str) -> bool {
 }
 
 /// Extract `<code>` block contents from HTML using simple string scanning.
-/// LinkedIn wraps JSON data in `<code>` tags with HTML-escaped content.
+/// `LinkedIn` wraps JSON data in `<code>` tags with HTML-escaped content.
 fn extract_code_blocks(html: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut search_from = 0;
@@ -44,7 +46,8 @@ fn extract_code_blocks(html: &str) -> Vec<String> {
     blocks
 }
 
-/// Extract post + comments from LinkedIn's SSR HTML (requires auth cookies).
+/// Extract post + comments from `LinkedIn`'s SSR HTML (requires auth cookies).
+#[allow(clippy::too_many_lines)]
 pub fn extract_linkedin_post(html: &str, url: &str) -> Option<ExtractionResult> {
     let code_blocks = extract_code_blocks(html);
 
@@ -54,7 +57,7 @@ pub fn extract_linkedin_post(html: &str, url: &str) -> Option<ExtractionResult> 
         if let Ok(obj) = serde_json::from_str::<Value>(raw)
             && let Some(arr) = obj.get("included").and_then(|v| v.as_array())
         {
-            let current_len = best_included.as_ref().map(|a| a.len()).unwrap_or(0);
+            let current_len = best_included.as_ref().map_or(0, std::vec::Vec::len);
             if arr.len() > current_len {
                 best_included = Some(arr.clone());
             }
@@ -105,8 +108,8 @@ pub fn extract_linkedin_post(html: &str, url: &str) -> Option<ExtractionResult> 
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if let Some((name, headline)) = profiles.get(author_urn) {
-                post_author = name.clone();
-                post_headline = headline.clone();
+                post_author.clone_from(name);
+                post_headline.clone_from(headline);
             }
             // Or inline name
             if post_author.is_empty()
@@ -136,10 +139,10 @@ pub fn extract_linkedin_post(html: &str, url: &str) -> Option<ExtractionResult> 
                 .and_then(|v| v.as_str())
         {
             if !post_author.is_empty() {
-                markdown.push_str(&format!("# {post_author}\n\n"));
+                let _ = writeln!(markdown, "# {post_author}\n");
             }
             if !post_headline.is_empty() {
-                markdown.push_str(&format!("*{post_headline}*\n\n"));
+                let _ = writeln!(markdown, "*{post_headline}*\n");
             }
             markdown.push_str("---\n\n");
             // Unescape literal \n from JSON
@@ -185,7 +188,7 @@ pub fn extract_linkedin_post(html: &str, url: &str) -> Option<ExtractionResult> 
     if !comments.is_empty() {
         markdown.push_str("---\n\n## Comments\n\n");
         for (name, text) in &comments {
-            markdown.push_str(&format!("- **{name}**: {text}\n\n"));
+            let _ = writeln!(markdown, "- **{name}**: {text}\n");
         }
     }
 
