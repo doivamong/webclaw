@@ -1,5 +1,5 @@
 /// Provider chain — tries providers in order until one succeeds.
-/// Default order: Ollama (local, free) -> OpenAI -> Anthropic.
+/// Default order: Ollama (local, free) -> `OpenAI` -> Anthropic.
 /// Only includes providers that are actually configured/available.
 use async_trait::async_trait;
 use tracing::{debug, warn};
@@ -15,7 +15,7 @@ pub struct ProviderChain {
 }
 
 impl ProviderChain {
-    /// Build the default chain: Ollama -> OpenAI -> Anthropic.
+    /// Build the default chain: Ollama -> `OpenAI` -> Anthropic.
     /// Ollama is always added (availability checked at call time).
     /// Cloud providers are only added if their API keys are configured.
     pub async fn default() -> Self {
@@ -43,6 +43,7 @@ impl ProviderChain {
     }
 
     /// Build a chain with a single explicit provider.
+    #[must_use]
     pub fn single(provider: Box<dyn LlmProvider>) -> Self {
         Self {
             providers: vec![provider],
@@ -50,21 +51,24 @@ impl ProviderChain {
     }
 
     /// Build from an explicit list of providers.
+    #[must_use]
     pub fn from_providers(providers: Vec<Box<dyn LlmProvider>>) -> Self {
         Self { providers }
     }
 
     /// How many providers are in the chain.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.providers.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.providers.is_empty()
     }
 }
 
-/// ProviderChain itself implements LlmProvider, so it can be used anywhere
+/// `ProviderChain` itself implements `LlmProvider`, so it can be used anywhere
 /// a single provider is expected. This makes the CLI simple: build a chain
 /// or a single provider, pass either as `Box<dyn LlmProvider>`.
 #[async_trait]
@@ -98,7 +102,7 @@ impl LlmProvider for ProviderChain {
         !self.providers.is_empty()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "chain"
     }
 }

@@ -1,5 +1,5 @@
 /// Anthropic provider — Claude models via api.anthropic.com.
-/// Anthropic's API differs from OpenAI: system message is a top-level param,
+/// Anthropic's API differs from `OpenAI`: system message is a top-level param,
 /// not part of the messages array.
 use async_trait::async_trait;
 use serde_json::json;
@@ -21,6 +21,7 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     /// Returns `None` if no API key is available (param or env).
+    #[must_use]
     pub fn new(key_override: Option<String>, model: Option<String>) -> Option<Self> {
         let key = load_api_key(key_override, "ANTHROPIC_API_KEY")?;
 
@@ -31,6 +32,7 @@ impl AnthropicProvider {
         })
     }
 
+    #[must_use]
     pub fn default_model(&self) -> &str {
         &self.default_model
     }
@@ -112,7 +114,7 @@ impl LlmProvider for AnthropicProvider {
         !self.key.is_empty()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "anthropic"
     }
 }

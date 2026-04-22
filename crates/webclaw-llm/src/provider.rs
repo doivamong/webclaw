@@ -1,4 +1,4 @@
-/// Core LLM abstraction. Every backend (Ollama, OpenAI, Anthropic) implements `LlmProvider`.
+/// Core LLM abstraction. Every backend (Ollama, `OpenAI`, Anthropic) implements `LlmProvider`.
 /// The trait is intentionally minimal — just completion and availability check.
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

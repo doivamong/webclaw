@@ -14,6 +14,7 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
+    #[must_use]
     pub fn new(base_url: Option<String>, model: Option<String>) -> Self {
         let base_url = base_url
             .or_else(|| std::env::var("OLLAMA_HOST").ok())
@@ -30,6 +31,7 @@ impl OllamaProvider {
         }
     }
 
+    #[must_use]
     pub fn default_model(&self) -> &str {
         &self.default_model
     }
@@ -108,7 +110,7 @@ impl LlmProvider for OllamaProvider {
         matches!(self.client.get(&url).send().await, Ok(r) if r.status().is_success())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ollama"
     }
 }

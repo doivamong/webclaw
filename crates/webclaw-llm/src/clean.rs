@@ -5,6 +5,7 @@
 /// Strip `<think>...</think>` blocks from LLM responses.
 /// Models like qwen3 wrap internal chain-of-thought reasoning in these tags.
 /// Handles multiline content, multiple blocks, and partial/malformed tags.
+#[must_use]
 pub fn strip_thinking_tags(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut remaining = text;

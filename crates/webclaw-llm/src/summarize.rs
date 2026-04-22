@@ -6,6 +6,10 @@ use crate::provider::{CompletionRequest, LlmProvider, Message};
 /// Summarize content using an LLM.
 /// Returns plain text (not JSON). Default is 3 sentences.
 /// Truncates input to avoid overwhelming small models.
+///
+/// # Errors
+///
+/// - `LlmError::ProviderError` — underlying provider HTTP/API failure.
 pub async fn summarize(
     content: &str,
     max_sentences: Option<usize>,
@@ -35,8 +39,9 @@ pub async fn summarize(
         more = n + 1
     );
 
-    // Cap max_tokens: ~40 tokens per sentence is generous
-    let token_limit = (n as u32) * 40 + 20;
+    // Cap max_tokens: ~40 tokens per sentence is generous. `n` is a
+    // user-provided sentence count (small int), saturating cast is safe.
+    let token_limit = u32::try_from(n.saturating_mul(40).saturating_add(20)).unwrap_or(u32::MAX);
 
     let request = CompletionRequest {
         model: model.unwrap_or_default().to_string(),

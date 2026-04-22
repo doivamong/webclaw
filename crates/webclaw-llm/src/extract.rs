@@ -6,6 +6,11 @@ use crate::provider::{CompletionRequest, LlmProvider, Message};
 
 /// Extract structured JSON from content using a JSON schema.
 /// The schema tells the LLM exactly what fields to extract and their types.
+///
+/// # Errors
+///
+/// - `LlmError::ProviderError` — underlying provider HTTP/API failure.
+/// - `LlmError::InvalidJson` — LLM response not parseable as JSON.
 pub async fn extract_json(
     content: &str,
     schema: &serde_json::Value,
@@ -42,6 +47,10 @@ pub async fn extract_json(
 
 /// Extract information using a natural language prompt.
 /// More flexible than schema extraction — the user describes what they want.
+///
+/// # Errors
+///
+/// - `LlmError::ProviderError` — underlying provider HTTP/API failure.
 pub async fn extract_with_prompt(
     content: &str,
     prompt: &str,

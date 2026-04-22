@@ -1,4 +1,4 @@
-/// OpenAI provider — works with api.openai.com and any OpenAI-compatible endpoint.
+/// `OpenAI` provider — works with api.openai.com and any OpenAI-compatible endpoint.
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -17,6 +17,7 @@ pub struct OpenAiProvider {
 
 impl OpenAiProvider {
     /// Returns `None` if no API key is available (param or env).
+    #[must_use]
     pub fn new(
         key_override: Option<String>,
         base_url: Option<String>,
@@ -34,6 +35,7 @@ impl OpenAiProvider {
         })
     }
 
+    #[must_use]
     pub fn default_model(&self) -> &str {
         &self.default_model
     }
@@ -109,7 +111,7 @@ impl LlmProvider for OpenAiProvider {
         !self.key.is_empty()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "openai"
     }
 }
