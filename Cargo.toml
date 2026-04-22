@@ -9,10 +9,10 @@ license = "AGPL-3.0"
 repository = "https://github.com/0xMassi/webclaw"
 
 [workspace.dependencies]
-webclaw-core = { path = "crates/webclaw-core" }
-webclaw-fetch = { path = "crates/webclaw-fetch" }
-webclaw-llm = { path = "crates/webclaw-llm" }
-webclaw-pdf = { path = "crates/webclaw-pdf" }
+webclaw-core = { path = "crates/webclaw-core", version = "0.3.4" }
+webclaw-fetch = { path = "crates/webclaw-fetch", version = "0.3.4" }
+webclaw-llm = { path = "crates/webclaw-llm", version = "0.3.4" }
+webclaw-pdf = { path = "crates/webclaw-pdf", version = "0.3.4" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
