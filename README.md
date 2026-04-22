@@ -554,69 +554,87 @@ cargo build --release --package webclaw-mcp --package webclaw-cli
 
 ## 📊 Benchmark
 
-### Extraction regression harness (50-URL run, 2026-04-23)
+### Extraction regression harness (200-URL run, 2026-04-23)
 
 > *`webclaw-bench` chạy extractor trên 1 000-URL corpus. KHÔNG phải competitive benchmark — dùng để detect regression sau khi cherry-pick upstream hoặc đổi core logic. Đo trên Windows 11, i5-12400, từ cache local (network fetch loại ra để đo pure extraction).*
 
-**Aggregate (n=50, 48 ok / 2 network-fail):**
+**Aggregate (n=200, 193 ok / 7 network-fail = 96.5% fetch success):**
 
 | Metric | Value |
 |:-------|:------|
-| **Readable rate** (`is_probably_readable`) | 26 / 50 = **52.0%** |
-| **Avg word count** (pages đọc được) | 674 words |
-| **Avg extraction time** (pure, from cache) | **30.5 ms** |
-| **50-URL e2e extract wall time** (cached) | **1.47 s** → ~29 ms/URL |
-| **Label match rate** (heuristic, 3 labels/URL) | 34.0% |
-| **Cold-cache full run** (fetch 47 URLs + extract) | ~62 s (~1.3 s/URL incl. network) |
+| **Readable rate** (`is_probably_readable`) | 126 / 200 = **63.0%** |
+| **Avg word count** (pages đọc được) | **963 words** |
+| **Avg extraction time** (pure, from cache) | **35.3 ms** |
+| **Label match rate** (heuristic, 3 labels/URL) | **46.9%** |
+| **Cold-cache full run** (fetch ~193 + extract) | ~7 phút (~2 s/URL incl. network) |
+| **Max word count** | 12 396 (Azure docs) / 90 ms |
+| **Max extraction time** | 276 ms (CNN tech, heavy DOM scoring) |
 
-**Per-category breakdown:**
+**Per-category breakdown** — Docs/Tech và News dominant:
 
 | Category | n | Readable | Avg words | Avg ms | Label % |
 |:---------|--:|:--------:|--------:|------:|-------:|
-| News / Tech media | 8 | 6/8 | 929 | 59.8 | 57.1% |
-| Jobs | 4 | 2/4 | 1 162 | 20.2 | 33.3% |
-| Tickets / Events | 4 | 2/4 | 986 | 20.2 | 41.7% |
-| E-commerce (PDP + category) | 20 | 11/20 | 740 | 34.5 | 31.7% |
+| **Docs / Tech** | 9 | **8/9** | **2 385** | 50.7 | **88.9%** |
+| News / Media | 10 | 8/10 | 918 | 54.2 | 59.3% |
+| Finance / Crypto | 2 | 1/2 | 2 050 | 122.5 | 50.0% |
+| E-commerce | 25 | 15/25 | 1 147 | 48.6 | 36.0% |
+| Jobs | 4 | 2/4 | 1 162 | 20.0 | 33.3% |
+| Tickets / Events | 4 | 2/4 | 986 | 21.2 | 41.7% |
 | Real estate | 4 | 3/4 | 139 | 9.8 | 33.3% |
-| Travel / Hotels | 6 | 1/6 | 162 | 14.2 | 22.2% |
+| Travel | 8 | 1/8 | 124 | 11.4 | 16.7% |
 | Social | 2 | 1/2 | 12 | 4.5 | 0.0% |
+| Other (mixed) | 125 | 85/125 | 898 | 32.4 | 48.9% |
 
 <details>
 <summary><b>📈 Per-URL detail — top performers + failure modes</b></summary>
 
 <br>
 
-**Top 5 word count** (scoring chọn đúng DOM root):
+**Top 10 word count** (scoring chọn đúng DOM root, không bị noise strip):
 
 | Words | Extract ms | Label match | URL |
 |------:|----------:|:-----------:|:----|
+| 12 396 | 90 | 3/3 | Azure docs |
+| 11 941 | 71 | 3/3 | Wikipedia Rust article |
+| 9 700 | 193 | 3/3 | Newegg GPU PDP (with reviews) |
+| 5 224 | 60 | 3/3 | Coinbase BTC price page |
 | 5 070 | 146 | 1/3 | Wayfair furniture PDP |
-| 4 636 | 117 | 2/3 | Amazon US B0CX23V2ZK |
-| 3 705 | 57 | 2/3 | Glassdoor jobs SRCH |
-| 2 370 | 118 | 2/3 | Amazon DE B09V3KXJPB |
-| 2 292 | 27 | 3/3 | TechCrunch homepage |
+| 4 964 | 35 | 3/3 | Datadog docs |
+| 4 659 | 228 | 2/3 | Zappos Nike listing |
+| 4 636 | 104 | 2/3 | Amazon US PDP |
+| 4 514 | 20 | 3/3 | Craigslist NYC |
+| 4 477 | 95 | 3/3 | REI hiking category |
 
-**Top 5 slowest extraction:**
+**Top 10 slowest extraction** (scoring pass trên DOM lớn):
 
 | ms | Words | URL |
 |---:|-----:|:----|
-| 306 | 1 085 | CNN tech (heavy DOM + scoring pass) |
-| 146 | 5 070 | Wayfair (large PDP) |
-| 118 | 2 370 | Amazon DE |
-| 117 | 4 636 | Amazon US |
-| 83 | 682 | Nike Women listing |
+| 276 | 1 085 | CNN tech (heavy JS-hydrated DOM) |
+| 244 | 4 099 | CoinGecko BTC |
+| 228 | 4 659 | Zappos Nike |
+| 225 | 8 | Uniqlo shirts (DOM heavy, extract ít — noise-stripped đúng) |
+| 199 | 2 501 | Patagonia jackets |
+| 193 | 9 700 | Newegg GPU |
+| 179 | 271 | Stripe docs |
+| 175 | 2 217 | Google Store |
+| 161 | 513 | Lenovo laptops |
+| 152 | 175 | Ocado |
 
-**Câu chuyện của 22 URL "not readable"** (word count ≤20):
+**74 URL "not readable"** (word count ≤20):
 
-Hầu hết là **SPA + auth wall / bot protection**, không phải bug extractor:
-- **Social (2/2)**: Instagram, Pinterest, TikTok → SPA, yêu cầu login
-- **Travel (5/6)**: Booking / Expedia / Airbnb / Hotels.com / Tripadvisor → SSR ít text + JS lazy load
-- **Retail PDP**: StockX / Walmart / Nordstrom / Etsy / Lowes / Macys / Sephora → client-rendered prices, SSR shell empty
-- **Jobs SPA**: Indeed / ZipRecruiter → kết quả fetch qua AJAX
+Phần lớn là **SPA + auth wall / bot protection**, không phải bug extractor:
+- **Social (1/2)**: Instagram, Pinterest, TikTok → SPA cần login
+- **Travel (7/8)**: Booking / Expedia / Airbnb / Hotels.com / Tripadvisor → SSR ít text + JS lazy load
+- **Retail PDP**: StockX / Walmart / Nordstrom / Uniqlo / Sephora → client-rendered prices, SSR shell empty
+- **Jobs SPA**: Indeed / ZipRecruiter → AJAX-loaded results
 - **News paywalls**: WSJ / Reuters → teaser only
-- **Ticketing SPA**: Viagogo / StubHub → search kết quả render JS
+- **Ticketing SPA**: Viagogo / StubHub → JS search results
 
-Extractor đúng khi **không** cố parse noise — trả `readable=NO` là behavior mong đợi. Để lấy data thật từ SPA, dùng `WEBCLAW_API_KEY` (cloud bot-bypass) hoặc `crates/webclaw-core` QuickJS feature cho data island.
+Extractor đúng khi **không** cố parse noise — trả `readable=NO` là behavior mong đợi. Để lấy data thật từ SPA, dùng `WEBCLAW_API_KEY` (cloud bot-bypass) hoặc core QuickJS feature cho data island extraction.
+
+**Network failures (7/200):**
+- Best Buy, BBC News tech, BBC Sport, Transfermarkt, Medium programming → `SendRequest/Connect` error (TLS handshake failed, likely bot challenge)
+- CarGurus Tesla, Under Armour shoes → `no content found` (extracted shell had no text, readability gate failed)
 
 </details>
 

@@ -16,4 +16,5 @@ HANDOVER.md
 # webclaw-bench artifacts
 benchmarks/cache/
 benchmarks/baseline-*.json
+benchmarks/runs/*.json
 research/

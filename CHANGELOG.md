@@ -32,11 +32,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   compliance hygiene).
 - **`benchmarks/targets_1000.txt`**: 1000-URL corpus seed ported from
   upstream v0.4.0. Harness crate TBD.
+- **`webclaw-bench` harness** (319191a → cc9f947): 415-LOC regression
+  runner. Samples from `targets_1000.txt`, extracts via `webclaw-core`,
+  emits `readable_count`, `avg_word_count`, `avg_extraction_ms`,
+  `label_match_rate` per-fixture + aggregate. Cache HTML at
+  `benchmarks/cache/` (SHA256-keyed). Empirical 50-URL baseline:
+  52% readable, 30.5 ms avg extract, 1.47 s wall time cached.
+- **`is_probably_readable()` public API** (2b31de4): quality heuristic
+  gate for bench + consumers — word count + link density thresholds.
 
 ### Changed
-- **Workspace lints** (`Cargo.toml`): `unsafe_code = "forbid"`,
-  `clippy::all = "deny"`, `clippy::pedantic = "warn"`. Inspired by
+- **Workspace lints** (`Cargo.toml`): `unsafe_code = "deny"` (downgraded
+  from `forbid` at e5f2336 so tests can `#[allow(unsafe_code)]` for
+  Rust 2024 `std::env::set_var` in `#[cfg(test)]` modules only),
+  `clippy::correctness/suspicious = "deny"` (likely-bug),
+  `clippy::all/pedantic = "warn"` (style). Inspired by
   `kreuzberg-dev/html-to-markdown` (MIT).
+- **Clippy pedantic sweep to 0 warnings** across 7 crates (363 → 0)
+  via 7 atomic commits (261e55c/c4d3f12/19a5858/e4a7503/79b1419/
+  da79b52/bdfafb1): webclaw-pdf (6), webclaw-bench (10), webclaw-llm (27),
+  webclaw-cli (23), webclaw-mcp (49), webclaw-fetch (94), webclaw-core (197).
+  All `#[allow]` have inline reason comments. `webclaw-core` adds
+  crate-level `#![allow(clippy::cast_precision_loss)]` (scoring /
+  density math). 405 workspace tests still pass.
 - **Release profile**: `opt-level=3 + lto=thin + strip` for CLI;
   `opt-level="z"` override for `webclaw-mcp` (size priority for
   Claude Desktop shipping). Inspired by
@@ -46,6 +64,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Docs drift fix** (`CLAUDE.md` + `crate-boundaries.md`): replaced
   stale `primp` references with `wreq` — fork actually uses
   `wreq 6.0.0-rc.28`. Verified via `crates/webclaw-fetch/Cargo.toml`.
+- **README rewrite** (784f68b): full rewrite in ITF-inspired layout —
+  centered header + badges + inline TOC + mermaid diagrams +
+  `<details>` collapsibles + per-crate LOC/file tables + 10 MCP tool
+  groups + CLI use-case table + AI-harness documentation. 258 → 1013
+  dòng. Thay toàn bộ structure, giữ fork-diff + benchmark data.
+
+### Fixed
+- **`webclaw-bench` stack overflow on Windows** (cc9f947): main thread
+  crashed after 3-4 fetch calls with "thread 'main' has overflowed its
+  stack". Root cause: wreq BoringSSL TLS handshake + accumulated async
+  state machines from per-target fetch loop exceeded Windows default
+  1 MB main-thread stack. CLI not affected (single fetch per invocation).
+  Fix: host tokio runtime on `std::thread::Builder::new().stack_size(8 MB)`
+  thread instead of `#[tokio::main]` default.
+- **`strip_markdown` slice-panic on single-pipe line**: `trimmed == "|"`
+  triggered `&trimmed[1..0]` slice with begin > end inside the table-row
+  converter. Hit in the wild during 200-URL bench sweep. Fix: require
+  `len() >= 3` before treating a line as a table row (so `|` and `||`
+  fall through to the default line push). Regression tests added:
+  `strip_markdown_handles_single_pipe_line`,
+  `strip_markdown_handles_empty_table_row`.
 
 ### Not pulled from upstream (intentional)
 - `webclaw-server` REST API crate (v0.4.0, 914 LOC) — fork is

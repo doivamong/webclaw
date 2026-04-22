@@ -824,8 +824,10 @@ fn strip_markdown(md: &str) -> String {
             continue;
         }
 
-        // Convert table data rows: strip leading/trailing pipes, replace inner pipes with tabs
-        if trimmed.starts_with('|') && trimmed.ends_with('|') {
+        // Convert table data rows: strip leading/trailing pipes, replace inner pipes with tabs.
+        // Require len >= 3 so `|` (single char) and `||` (empty cell) don't slice-panic or
+        // emit empty rows.
+        if trimmed.len() >= 3 && trimmed.starts_with('|') && trimmed.ends_with('|') {
             let inner = &trimmed[1..trimmed.len() - 1];
             let cells: Vec<&str> = inner.split('|').map(str::trim).collect();
             lines.push(cells.join("\t"));
@@ -857,6 +859,24 @@ mod tests {
 
         let (md, _, _) = convert_html("<h3>Sub</h3>", None);
         assert!(md.contains("### Sub"));
+    }
+
+    #[test]
+    fn strip_markdown_handles_single_pipe_line() {
+        // Regression: trimmed == "|" used to slice `&trimmed[1..0]` and panic.
+        // Single-pipe lines should pass through unchanged (not treated as table row).
+        let out = strip_markdown("text\n|\nmore text");
+        assert!(out.contains("text"));
+        assert!(out.contains("|"));
+        assert!(out.contains("more text"));
+    }
+
+    #[test]
+    fn strip_markdown_handles_empty_table_row() {
+        // `||` (empty table row) should not slice-panic either.
+        let out = strip_markdown("text\n||\nmore text");
+        assert!(out.contains("text"));
+        assert!(out.contains("more text"));
     }
 
     #[test]
