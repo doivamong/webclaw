@@ -114,6 +114,7 @@ impl LlmProvider for OllamaProvider {
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)] // std::env::set_var / remove_var is unsafe in Rust 2024
 mod tests {
     use super::*;
 

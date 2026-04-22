@@ -40,8 +40,7 @@ const MAX_SELECTORS: usize = 100;
 /// Adapted from github.com/spider-rs/readability (MIT) — PUNCTUATIONS_REGEX
 /// idea. Regex simplified to CJK-only here; Latin punctuation already handled
 /// by score_node text_len heuristics.
-static CJK_PUNCTUATIONS: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"[、。，．！？]").unwrap());
+static CJK_PUNCTUATIONS: Lazy<Regex> = Lazy::new(|| Regex::new(r"[、。，．！？]").unwrap());
 
 /// Build a HashSet of NodeIds to exclude based on CSS selector strings.
 /// Invalid selectors are skipped with a warning.

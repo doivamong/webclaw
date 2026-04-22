@@ -23,7 +23,9 @@ clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny (not forbid) so targeted #[allow(unsafe_code)] is possible in test
+# modules where std::env::{set_var,remove_var} is unsafe in Rust 2024.
+unsafe_code = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
