@@ -3,6 +3,59 @@
 All notable changes to webclaw are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+> **Note on fork vs upstream**
+>
+> This is the `doivamong/webclaw` fork of `0xMassi/webclaw`. Fork diverged
+> from upstream at v0.3.4 baseline. Upstream has since shipped v0.3.5 →
+> v0.4.0 (including a `webclaw-server` REST API crate and `targets_1000.txt`
+> benchmark corpus). Fork intentionally does not pull wholesale — changes
+> from upstream are cherry-picked as individual patterns when they add
+> value to fork's daily-dev use case. See
+> `research/github_0xMassi_webclaw/CHANGELOG.md` for upstream-only entries.
+
+## [Unreleased] — fork
+
+### Added
+- **Skill system infrastructure** (ea975a3): 20 skills in `.claude/skills/`,
+  4 rules in `.claude/rules/`, 4 hooks, 3 specialized agents, 5 commands,
+  3 plan templates (bug-fix, feature, refactor). Upstream has only 5 skills.
+- **Research workflow** (`research/`): 8 external repo studies
+  (llm_readability, dom_smoothie, kreuzberg, Govcraft, curl-impersonate,
+  firecrawl, homebrew-webclaw, upstream webclaw) with `_wc_ref_meta.md`
+  per repo. Informs fork's port/skip decisions.
+- **Plan system** (`plans/`): structured multi-phase plans for non-trivial
+  changes, each phase scoped to a single coherent commit.
+- **CJK punctuation heuristic** (`score_node`): adapted from
+  `spider-rs/readability` (MIT) — adds `、。，．！？` count as scoring
+  signal so Japanese / Chinese / Korean articles don't under-score.
+- **`ATTRIBUTIONS.md`**: tracks third-party pattern ports (AGPL
+  compliance hygiene).
+- **`benchmarks/targets_1000.txt`**: 1000-URL corpus seed ported from
+  upstream v0.4.0. Harness crate TBD.
+
+### Changed
+- **Workspace lints** (`Cargo.toml`): `unsafe_code = "forbid"`,
+  `clippy::all = "deny"`, `clippy::pedantic = "warn"`. Inspired by
+  `kreuzberg-dev/html-to-markdown` (MIT).
+- **Release profile**: `opt-level=3 + lto=thin + strip` for CLI;
+  `opt-level="z"` override for `webclaw-mcp` (size priority for
+  Claude Desktop shipping). Inspired by
+  `Govcraft/rust-docs-mcp-server` (MIT).
+- **`release.yml`**: added `workflow_dispatch` manual trigger for
+  re-running a failed tag push with explicit version input.
+- **Docs drift fix** (`CLAUDE.md` + `crate-boundaries.md`): replaced
+  stale `primp` references with `wreq` — fork actually uses
+  `wreq 6.0.0-rc.28`. Verified via `crates/webclaw-fetch/Cargo.toml`.
+
+### Not pulled from upstream (intentional)
+- `webclaw-server` REST API crate (v0.4.0, 914 LOC) — fork is
+  personal daily-dev tool, no self-host API need.
+- `docker-entrypoint.sh`, `smithery.yaml` — no Docker / Smithery
+  distribution plan for fork yet.
+- `create-webclaw` npm package — fork doesn't publish.
+
+---
+
 ## [0.3.4] — 2026-04-01
 
 ### Added
