@@ -1,7 +1,7 @@
 /// PDF text extraction for webclaw.
 ///
 /// Uses pdf-extract (backed by lopdf) to pull text from PDF bytes.
-/// No OCR -- text-based PDFs only. Scanned PDFs return EmptyPdf in Auto mode.
+/// No OCR -- text-based PDFs only. Scanned PDFs return `EmptyPdf` in Auto mode.
 pub mod error;
 
 pub use error::PdfError;
@@ -44,7 +44,14 @@ const MAX_PDF_SIZE: usize = 50 * 1024 * 1024; // 50MB
 /// Uses pdf-extract for text extraction and lopdf (transitive dep) for
 /// metadata and page count. In `Auto` mode, returns `PdfError::EmptyPdf`
 /// if no text is found (likely a scanned/image-only PDF).
-pub fn extract_pdf(bytes: &[u8], mode: PdfMode) -> Result<PdfResult, PdfError> {
+///
+/// # Errors
+///
+/// - `PdfError::InvalidPdf` — malformed bytes, missing `%PDF-` header, or
+///   size exceeds `MAX_PDF_SIZE` (50 MB).
+/// - `PdfError::ExtractionFailed` — `pdf-extract` couldn't decode text.
+/// - `PdfError::EmptyPdf` — `Auto` mode and zero text extracted.
+pub fn extract_pdf(bytes: &[u8], mode: &PdfMode) -> Result<PdfResult, PdfError> {
     if bytes.len() > MAX_PDF_SIZE {
         return Err(PdfError::InvalidPdf(format!(
             "PDF too large ({} bytes, max {})",
@@ -86,9 +93,10 @@ pub fn extract_pdf(bytes: &[u8], mode: PdfMode) -> Result<PdfResult, PdfError> {
     })
 }
 
-/// Format a PdfResult as markdown for downstream consumers.
+/// Format a `PdfResult` as markdown for downstream consumers.
 ///
 /// Adds title as a heading if available, followed by the extracted text body.
+#[must_use]
 pub fn to_markdown(result: &PdfResult) -> String {
     let mut out = String::new();
 
@@ -132,8 +140,7 @@ fn read_metadata(doc: &Document) -> PdfMetadata {
 fn info_string(dict: &Dictionary, key: &[u8]) -> Option<String> {
     let obj = dict.get(key).ok()?;
     let raw = match obj {
-        Object::String(bytes, _) => bytes.clone(),
-        Object::Name(bytes) => bytes.clone(),
+        Object::String(bytes, _) | Object::Name(bytes) => bytes.clone(),
         _ => return None,
     };
 
@@ -246,27 +253,27 @@ mod tests {
 
     #[test]
     fn test_empty_bytes_returns_error() {
-        let result = extract_pdf(&[], PdfMode::Auto);
+        let result = extract_pdf(&[], &PdfMode::Auto);
         assert!(matches!(result, Err(PdfError::InvalidPdf(_))));
     }
 
     #[test]
     fn test_garbage_bytes_returns_error() {
-        let result = extract_pdf(b"not a pdf at all", PdfMode::Auto);
+        let result = extract_pdf(b"not a pdf at all", &PdfMode::Auto);
         assert!(matches!(result, Err(PdfError::InvalidPdf(_))));
     }
 
     #[test]
     fn test_truncated_pdf_header_returns_error() {
         // Has the PDF magic but nothing else -- lopdf will reject it
-        let result = extract_pdf(b"%PDF-1.4\n", PdfMode::Auto);
+        let result = extract_pdf(b"%PDF-1.4\n", &PdfMode::Auto);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_oversized_pdf_rejected() {
         let big = vec![0u8; MAX_PDF_SIZE + 1];
-        let result = extract_pdf(&big, PdfMode::Auto);
+        let result = extract_pdf(&big, &PdfMode::Auto);
         assert!(matches!(result, Err(PdfError::InvalidPdf(msg)) if msg.contains("too large")));
     }
 

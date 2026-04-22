@@ -338,7 +338,7 @@ impl FetchClient {
                 "PDF fetch complete"
             );
 
-            let pdf_result = webclaw_pdf::extract_pdf(bytes, self.pdf_mode.clone())?;
+            let pdf_result = webclaw_pdf::extract_pdf(bytes, &self.pdf_mode)?;
             Ok(pdf_to_extraction_result(&pdf_result, &final_url))
         } else if let Some(doc_type) =
             crate::document::is_document_content_type(&headers, &final_url)
