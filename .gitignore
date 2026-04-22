@@ -2,4 +2,13 @@ target/
 .DS_Store
 .env
 proxies.txt
-.claude/skills/
+
+# Claude Code runtime
+# Tracked: .claude/settings.json, skills/, rules/, hooks/, agents/, commands/, plans/templates/
+# Gitignored:
+.claude/settings.local.json
+.claude/.logs/
+.claude/plans/*
+!.claude/plans/templates/
+.claude/hooks/**/__pycache__/
+HANDOVER.md

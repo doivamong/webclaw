@@ -1,0 +1,77 @@
+{
+  "attribution": {
+    "commit": "Co-Authored-By: webclaw-dev <noreply@webclaw.io>",
+    "pr": "Co-Authored-By: webclaw-dev <noreply@webclaw.io>"
+  },
+  "env": {
+    "WEBCLAW_HOOK_LOGGING": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo bench:*)",
+      "Bash(cargo doc:*)",
+      "Bash(cargo tree:*)",
+      "Bash(cargo audit:*)",
+      "Bash(cargo outdated:*)",
+      "Bash(cargo deny:*)",
+      "Bash(cargo machete:*)",
+      "Bash(cargo udeps:*)",
+      "Bash(cargo modules:*)",
+      "Bash(git log *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(python tools/sync_codebase_docs.py *)",
+      "mcp__webclaw__scrape",
+      "mcp__webclaw__search",
+      "mcp__webclaw__research",
+      "mcp__webclaw__batch"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session_start_inject.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/secret_scanner.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/wasm_boundary_check.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cargo_fmt_check.py\"",
+            "timeout": 25
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -159,12 +159,27 @@ Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_deskt
 
 ## Skills
 
+### User-facing API skill (external consumers)
+
 - `/scrape <url>` — extract content from a URL
 - `/search <query>` — web search via SerpAPI
 - `/benchmark [url]` — run extraction performance benchmarks
 - `/research <query>` — deep research: search + fetch + LLM synthesis
 - `/crawl <url>` — crawl a website
 - `/commit` — conventional commit with change analysis
+
+### Internal dev workflow (maintainer only)
+
+Claude Code auto-loads rules from `.claude/rules/` và conditionally invokes skills from `.claude/skills/` based on triggers. 20 skills grouped theo tier (workflow/guard/feature/audit/webclaw-specific).
+
+- **Rules** (always-load): [primary-workflow](.claude/rules/primary-workflow.md), [development-rules](.claude/rules/development-rules.md), [orchestration-protocol](.claude/rules/orchestration-protocol.md), [crate-boundaries](.claude/rules/crate-boundaries.md)
+- **Skills** (conditional): workflow (wc-cook, wc-review-v2), guard (wc-pre-commit, wc-arch-guard, wc-config-guard, wc-mcp-guard, wc-output-guard), feature (wc-research-guide, wc-github-ref, wc-predict, wc-scenario, wc-debug-map, wc-optimize, wc-graph), audit (wc-code-audit, wc-deps-audit), webclaw-specific (wc-extraction-bench, wc-bot-detection-audit, wc-release), utility (wc-session-save), meta (using-skills)
+- **Hooks** (auto-fire): `cargo_fmt_check.py` (warn), `secret_scanner.py` (block API key), `wasm_boundary_check.py` (block tokio/reqwest/fs/net in webclaw-core)
+- **Agents** (sub-agent delegation): wc-rust-expert, wc-mcp-expert, wc-bench-runner
+- **Commands** (slash): `/cook`, `/review`, `/commit`, `/bench`, `/release`
+- **Plan templates**: `.claude/plans/templates/{bug-fix, feature-implementation, refactor}-template.md`
+
+Kill switches: `WEBCLAW_HOOK_LOGGING=0` (disable logging), `WEBCLAW_SECRET_SCAN=0`, `WEBCLAW_WASM_CHECK=0` (emergency bypass hooks).
 
 ## Git
 
