@@ -74,7 +74,10 @@ impl SerpApiClient {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
-        info!(key_count = keys.len(), "SerpAPI search enabled (multi-key rotation)");
+        info!(
+            key_count = keys.len(),
+            "SerpAPI search enabled (multi-key rotation)"
+        );
         Some(Self {
             keys,
             http,
@@ -155,18 +158,18 @@ impl SerpApiClient {
 
     /// Raw SerpAPI call. Returns parsed JSON.
     async fn raw_search(&self, query: &str, opts: &SearchOptions) -> Result<Value, String> {
-        let (idx, key) = self
-            .pick_key()
-            .await
-            .ok_or_else(|| {
-                format!(
-                    "All {} SerpAPI keys exhausted. Add more keys to SERPAPI_KEY (comma-separated).",
-                    self.keys.len()
-                )
-            })?;
+        let (idx, key) = self.pick_key().await.ok_or_else(|| {
+            format!(
+                "All {} SerpAPI keys exhausted. Add more keys to SERPAPI_KEY (comma-separated).",
+                self.keys.len()
+            )
+        })?;
 
         // Auto-detect language from query if not specified
-        let detected_lang = opts.language.as_deref().unwrap_or_else(|| detect_language(query));
+        let detected_lang = opts
+            .language
+            .as_deref()
+            .unwrap_or_else(|| detect_language(query));
         let detected_country = opts
             .country
             .as_deref()
@@ -423,7 +426,13 @@ mod tests {
     fn test_recency_values() {
         // Just verify the mapping is correct
         assert_eq!(
-            match "day" { "day" => "qdr:d", "week" => "qdr:w", "month" => "qdr:m", "year" => "qdr:y", _ => "" },
+            match "day" {
+                "day" => "qdr:d",
+                "week" => "qdr:w",
+                "month" => "qdr:m",
+                "year" => "qdr:y",
+                _ => "",
+            },
             "qdr:d"
         );
     }

@@ -527,7 +527,8 @@ impl WebclawMcp {
             };
             let batch = tokio::time::timeout(
                 Duration::from_secs(30),
-                self.fetch_client.fetch_and_extract_batch_with_options(&urls, 5, &options),
+                self.fetch_client
+                    .fetch_and_extract_batch_with_options(&urls, 5, &options),
             )
             .await
             .map_err(|_| "Research fetch timed out after 30s".to_string())?;
@@ -559,8 +560,7 @@ impl WebclawMcp {
 
             // LLM synthesis (Ollama → fallback chain)
             if let Some(ref chain) = self.llm_chain {
-                let research_model = std::env::var("OLLAMA_RESEARCH_MODEL")
-                    .unwrap_or_default();
+                let research_model = std::env::var("OLLAMA_RESEARCH_MODEL").unwrap_or_default();
                 let topic_hint = params
                     .topic
                     .as_deref()
