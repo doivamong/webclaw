@@ -1,11 +1,11 @@
 /// Cloud API client for automatic fallback when local extraction fails.
 ///
-/// When WEBCLAW_API_KEY is set (or --api-key is passed), the CLI can fall back
+/// When `WEBCLAW_API_KEY` is set (or --api-key is passed), the CLI can fall back
 /// to api.webclaw.io for bot-protected or JS-rendered sites. With --cloud flag,
 /// all requests go through the cloud API directly.
 ///
 /// NOTE: The canonical, full-featured cloud module lives in webclaw-mcp/src/cloud.rs
-/// (smart_fetch, bot detection, JS rendering checks). This is the minimal subset
+/// (`smart_fetch`, bot detection, JS rendering checks). This is the minimal subset
 /// needed by the CLI. Kept separate to avoid pulling in rmcp via webclaw-mcp.
 /// and adding webclaw-mcp as a dependency would pull in rmcp.
 use serde_json::{Value, json};
@@ -18,7 +18,7 @@ pub struct CloudClient {
 }
 
 impl CloudClient {
-    /// Create from explicit key or WEBCLAW_API_KEY env var.
+    /// Create from explicit key or `WEBCLAW_API_KEY` env var.
     pub fn new(explicit_key: Option<&str>) -> Option<Self> {
         let key = explicit_key
             .map(String::from)
