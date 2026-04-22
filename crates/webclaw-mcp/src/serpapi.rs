@@ -1,11 +1,12 @@
-/// SerpAPI local search with multi-key rotation.
+/// `SerpAPI` local search with multi-key rotation.
 ///
-/// Supports comma-separated keys in SERPAPI_KEY env var.
+/// Supports comma-separated keys in `SERPAPI_KEY` env var.
 /// Checks quota via Account API (free, not counted) before each search.
 /// Auto-rotates to next key when current key is exhausted.
 /// Quota results are cached for 5 minutes to reduce latency.
 /// Optional LLM query rewriting via Ollama for better relevance.
 use serde_json::Value;
+use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -48,7 +49,7 @@ struct QuotaEntry {
     checked_at: Instant,
 }
 
-/// SerpAPI client with multi-key rotation and quota caching.
+/// `SerpAPI` client with multi-key rotation and quota caching.
 pub struct SerpApiClient {
     keys: Vec<String>,
     http: reqwest::Client,
@@ -57,7 +58,7 @@ pub struct SerpApiClient {
 }
 
 impl SerpApiClient {
-    /// Create from SERPAPI_KEY env var (comma-separated for multiple keys).
+    /// Create from `SERPAPI_KEY` env var (comma-separated for multiple keys).
     /// Returns None if not set or empty.
     pub fn from_env() -> Option<Self> {
         let raw = std::env::var("SERPAPI_KEY").ok()?;
@@ -88,31 +89,31 @@ impl SerpApiClient {
     /// Check remaining quota for a key. Uses cache if fresh (< 5 min).
     async fn check_quota(&self, key_index: usize, key: &str) -> u64 {
         // Check cache first
-        if let Ok(cache) = self.quota_cache.lock() {
-            if let Some(Some(entry)) = cache.get(key_index) {
-                if entry.checked_at.elapsed() < QUOTA_CACHE_TTL && entry.remaining > 0 {
-                    return entry.remaining;
-                }
-            }
+        if let Ok(cache) = self.quota_cache.lock()
+            && let Some(Some(entry)) = cache.get(key_index)
+            && entry.checked_at.elapsed() < QUOTA_CACHE_TTL
+            && entry.remaining > 0
+        {
+            return entry.remaining;
         }
 
         // Cache miss or expired — fetch from API
         let remaining = self.fetch_quota(key).await;
 
         // Update cache
-        if let Ok(mut cache) = self.quota_cache.lock() {
-            if let Some(slot) = cache.get_mut(key_index) {
-                *slot = Some(QuotaEntry {
-                    remaining,
-                    checked_at: Instant::now(),
-                });
-            }
+        if let Ok(mut cache) = self.quota_cache.lock()
+            && let Some(slot) = cache.get_mut(key_index)
+        {
+            *slot = Some(QuotaEntry {
+                remaining,
+                checked_at: Instant::now(),
+            });
         }
 
         remaining
     }
 
-    /// Fetch quota from SerpAPI Account API (not cached).
+    /// Fetch quota from `SerpAPI` Account API (not cached).
     async fn fetch_quota(&self, key: &str) -> u64 {
         let resp = self
             .http
@@ -124,7 +125,7 @@ impl SerpApiClient {
             Ok(r) if r.status().is_success() => {
                 if let Ok(data) = r.json::<Value>().await {
                     data.get("total_searches_left")
-                        .and_then(|v| v.as_u64())
+                        .and_then(serde_json::Value::as_u64)
                         .unwrap_or(0)
                 } else {
                     0
@@ -136,10 +137,10 @@ impl SerpApiClient {
 
     /// Decrement cached quota after a successful search.
     fn decrement_quota(&self, key_index: usize) {
-        if let Ok(mut cache) = self.quota_cache.lock() {
-            if let Some(Some(entry)) = cache.get_mut(key_index) {
-                entry.remaining = entry.remaining.saturating_sub(1);
-            }
+        if let Ok(mut cache) = self.quota_cache.lock()
+            && let Some(Some(entry)) = cache.get_mut(key_index)
+        {
+            entry.remaining = entry.remaining.saturating_sub(1);
         }
     }
 
@@ -156,7 +157,7 @@ impl SerpApiClient {
         None
     }
 
-    /// Raw SerpAPI call. Returns parsed JSON.
+    /// Raw `SerpAPI` call. Returns parsed JSON.
     async fn raw_search(&self, query: &str, opts: &SearchOptions) -> Result<Value, String> {
         let (idx, key) = self.pick_key().await.ok_or_else(|| {
             format!(
@@ -255,7 +256,7 @@ impl SerpApiClient {
             recency,
         };
         let data = self.raw_search(query, &opts).await?;
-        format_results(&data)
+        Ok(format_results(&data))
     }
 
     /// Search and return structured results (for research pipeline).
@@ -304,7 +305,7 @@ fn lang_to_country(lang: &str) -> &'static str {
     }
 }
 
-/// Parse organic results into structured SearchResult vec.
+/// Parse organic results into structured `SearchResult` vec.
 fn parse_results(data: &Value) -> Vec<SearchResult> {
     data.get("organic_results")
         .and_then(|v| v.as_array())
@@ -327,23 +328,24 @@ fn parse_results(data: &Value) -> Vec<SearchResult> {
         .unwrap_or_default()
 }
 
-/// Format SerpAPI response into readable text.
-fn format_results(data: &Value) -> Result<String, String> {
+/// Format `SerpAPI` response into readable text.
+fn format_results(data: &Value) -> String {
     let results = parse_results(data);
     let mut output = String::new();
 
     if results.is_empty() {
         output.push_str("No results found.\n");
     } else {
-        output.push_str(&format!("Found {} results:\n\n", results.len()));
+        let _ = writeln!(output, "Found {} results:\n", results.len());
         for (i, r) in results.iter().enumerate() {
-            output.push_str(&format!(
-                "{}. {}\n   {}\n   {}\n\n",
+            let _ = writeln!(
+                output,
+                "{}. {}\n   {}\n   {}\n",
                 i + 1,
                 r.title,
                 r.url,
                 r.snippet
-            ));
+            );
         }
     }
 
@@ -351,15 +353,15 @@ fn format_results(data: &Value) -> Result<String, String> {
     if let Some(answer) = data.get("answer_box") {
         output.push_str("--- Answer Box ---\n");
         if let Some(title) = answer.get("title").and_then(|v| v.as_str()) {
-            output.push_str(&format!("{title}\n"));
+            let _ = writeln!(output, "{title}");
         }
         if let Some(snippet) = answer.get("snippet").and_then(|v| v.as_str()) {
-            output.push_str(&format!("{snippet}\n"));
+            let _ = writeln!(output, "{snippet}");
         } else if let Some(answer_text) = answer.get("answer").and_then(|v| v.as_str()) {
-            output.push_str(&format!("{answer_text}\n"));
+            let _ = writeln!(output, "{answer_text}");
         }
         if let Some(link) = answer.get("link").and_then(|v| v.as_str()) {
-            output.push_str(&format!("Source: {link}\n"));
+            let _ = writeln!(output, "Source: {link}");
         }
         output.push('\n');
     }
@@ -369,27 +371,27 @@ fn format_results(data: &Value) -> Result<String, String> {
         let title = kg.get("title").and_then(|v| v.as_str()).unwrap_or("");
         let desc = kg.get("description").and_then(|v| v.as_str()).unwrap_or("");
         if !title.is_empty() || !desc.is_empty() {
-            output.push_str(&format!("--- Knowledge Graph ---\n{title}\n{desc}\n\n"));
+            let _ = writeln!(output, "--- Knowledge Graph ---\n{title}\n{desc}\n");
         }
     }
 
     // Append related questions if present
-    if let Some(related) = data.get("related_questions").and_then(|v| v.as_array()) {
-        if !related.is_empty() {
-            output.push_str("--- Related Questions ---\n");
-            for q in related.iter().take(3) {
-                if let Some(question) = q.get("question").and_then(|v| v.as_str()) {
-                    output.push_str(&format!("• {question}\n"));
-                    if let Some(snippet) = q.get("snippet").and_then(|v| v.as_str()) {
-                        output.push_str(&format!("  {}\n", &snippet[..snippet.len().min(150)]));
-                    }
+    if let Some(related) = data.get("related_questions").and_then(|v| v.as_array())
+        && !related.is_empty()
+    {
+        output.push_str("--- Related Questions ---\n");
+        for q in related.iter().take(3) {
+            if let Some(question) = q.get("question").and_then(|v| v.as_str()) {
+                let _ = writeln!(output, "• {question}");
+                if let Some(snippet) = q.get("snippet").and_then(|v| v.as_str()) {
+                    let _ = writeln!(output, "  {}", &snippet[..snippet.len().min(150)]);
                 }
             }
-            output.push('\n');
         }
+        output.push('\n');
     }
 
-    Ok(output)
+    output
 }
 
 #[cfg(test)]

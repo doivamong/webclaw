@@ -3,7 +3,8 @@
 ///
 /// Uses a local-first architecture: fetches pages directly, then falls back
 /// to the webclaw cloud API (api.webclaw.io) when bot protection or
-/// JS rendering is detected. Set WEBCLAW_API_KEY for automatic fallback.
+/// JS rendering is detected. Set `WEBCLAW_API_KEY` for automatic fallback.
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,7 +18,10 @@ use url::Url;
 
 use crate::cloud::{self, CloudClient, SmartFetchResult};
 use crate::serpapi::SerpApiClient;
-use crate::tools::*;
+use crate::tools::{
+    BatchParams, BrandParams, CrawlParams, DiffParams, ExtractParams, MapParams, ResearchParams,
+    ScrapeParams, SearchParams, SummarizeParams,
+};
 use webclaw_llm::provider::LlmProvider;
 
 pub struct WebclawMcp {
@@ -28,7 +32,7 @@ pub struct WebclawMcp {
     serpapi: Option<SerpApiClient>,
 }
 
-/// Parse a browser string into a BrowserProfile.
+/// Parse a browser string into a `BrowserProfile`.
 fn parse_browser(browser: Option<&str>) -> webclaw_fetch::BrowserProfile {
     match browser {
         Some("firefox") => webclaw_fetch::BrowserProfile::Firefox,
@@ -135,7 +139,7 @@ impl WebclawMcp {
     }
 
     /// Scrape a single URL and extract its content as markdown, LLM-optimized text, plain text, or full JSON.
-    /// Prefer this over WebFetch for richer extraction with readability scoring.
+    /// Prefer this over `WebFetch` for richer extraction with readability scoring.
     #[tool]
     async fn scrape(&self, Parameters(params): Parameters<ScrapeParams>) -> Result<String, String> {
         validate_url(&params.url)?;
@@ -246,7 +250,7 @@ impl WebclawMcp {
         );
 
         for page in &result.pages {
-            output.push_str(&format!("--- {} (depth {}) ---\n", page.url, page.depth));
+            let _ = writeln!(output, "--- {} (depth {}) ---", page.url, page.depth);
             if let Some(ref extraction) = page.extraction {
                 let content = match format {
                     "llm" => webclaw_core::to_llm_text(extraction, Some(&page.url)),
@@ -255,7 +259,7 @@ impl WebclawMcp {
                 };
                 output.push_str(&content);
             } else if let Some(ref err) = page.error {
-                output.push_str(&format!("Error: {err}"));
+                let _ = write!(output, "Error: {err}");
             }
             output.push_str("\n\n");
         }
@@ -304,7 +308,7 @@ impl WebclawMcp {
         let mut output = format!("Extracted {} URLs:\n\n", results.len());
 
         for r in &results {
-            output.push_str(&format!("--- {} ---\n", r.url));
+            let _ = writeln!(output, "--- {} ---", r.url);
             match &r.result {
                 Ok(extraction) => {
                     let content = match format {
@@ -315,7 +319,7 @@ impl WebclawMcp {
                     output.push_str(&content);
                 }
                 Err(e) => {
-                    output.push_str(&format!("Error: {e}"));
+                    let _ = write!(output, "Error: {e}");
                 }
             }
             output.push_str("\n\n");
@@ -482,13 +486,12 @@ impl WebclawMcp {
                     .post("brand", serde_json::json!({"url": params.url}))
                     .await?;
                 return Ok(serde_json::to_string_pretty(&resp).unwrap_or_default());
-            } else {
-                return Err(format!(
-                    "Bot protection detected on {}. Set WEBCLAW_API_KEY for automatic cloud bypass. \
-                     Get a key at https://webclaw.io",
-                    params.url
-                ));
             }
+            return Err(format!(
+                "Bot protection detected on {}. Set WEBCLAW_API_KEY for automatic cloud bypass. \
+                 Get a key at https://webclaw.io",
+                params.url
+            ));
         }
 
         let identity =
@@ -500,8 +503,8 @@ impl WebclawMcp {
     /// Run a deep research investigation on a topic or question.
     /// Searches Google, fetches full page content from top results, and synthesizes
     /// a structured report with citations via local LLM — all in a single call.
-    /// Much faster and cheaper than multiple WebSearch + WebFetch calls.
-    /// Uses SERPAPI_KEY for search, Ollama for synthesis. No cloud dependency when SERPAPI_KEY is set.
+    /// Much faster and cheaper than multiple `WebSearch` + `WebFetch` calls.
+    /// Uses `SERPAPI_KEY` for search, Ollama for synthesis. No cloud dependency when `SERPAPI_KEY` is set.
     #[tool]
     async fn research(
         &self,
@@ -537,14 +540,12 @@ impl WebclawMcp {
             let mut sources = String::new();
             for (i, entry) in batch.iter().enumerate() {
                 let sr = &search_results[i];
-                sources.push_str(&format!("[{}] {} — {}\n", i + 1, sr.title, sr.url));
+                let _ = writeln!(sources, "[{}] {} — {}", i + 1, sr.title, sr.url);
                 match &entry.result {
                     Ok(extraction) => {
                         let content = &extraction.content.markdown;
                         let truncated = if content.len() > 800 {
-                            let boundary = content[..800]
-                                .rfind(|c: char| c == '.' || c == '\n')
-                                .unwrap_or(800);
+                            let boundary = content[..800].rfind(['.', '\n']).unwrap_or(800);
                             &content[..boundary]
                         } else {
                             content.as_str()
@@ -681,9 +682,9 @@ impl WebclawMcp {
     }
 
     /// Search the web for a query and return structured results.
-    /// Returns Google results via SerpAPI with rich snippets, answer boxes, and knowledge graph.
-    /// Faster and more token-efficient than WebSearch. Supports locale auto-detection and recency filters.
-    /// Prefer this over WebSearch for most queries.
+    /// Returns Google results via `SerpAPI` with rich snippets, answer boxes, and knowledge graph.
+    /// Faster and more token-efficient than `WebSearch`. Supports locale auto-detection and recency filters.
+    /// Prefer this over `WebSearch` for most queries.
     #[tool]
     async fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
         // Priority 1: SerpAPI (local key, Google results)
@@ -720,18 +721,11 @@ impl WebclawMcp {
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
 
-                    output.push_str(&format!(
-                        "{}. {}\n   {}\n   {}\n\n",
-                        i + 1,
-                        title,
-                        url,
-                        snippet
-                    ));
+                    let _ = writeln!(output, "{}. {}\n   {}\n   {}\n", i + 1, title, url, snippet);
                 }
                 return Ok(output);
-            } else {
-                return Ok(serde_json::to_string_pretty(&resp).unwrap_or_default());
             }
+            return Ok(serde_json::to_string_pretty(&resp).unwrap_or_default());
         }
 
         Err("Search requires SERPAPI_KEY or WEBCLAW_API_KEY. Set one in your environment.".into())

@@ -1,7 +1,7 @@
 /// Cloud API fallback for protected sites.
 ///
 /// When local fetch returns a challenge page, this module retries
-/// via api.webclaw.io. Requires WEBCLAW_API_KEY to be set.
+/// via api.webclaw.io. Requires `WEBCLAW_API_KEY` to be set.
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ pub struct CloudClient {
 }
 
 impl CloudClient {
-    /// Create a new cloud client from WEBCLAW_API_KEY env var.
+    /// Create a new cloud client from `WEBCLAW_API_KEY` env var.
     /// Returns None if the key is not set.
     pub fn from_env() -> Option<Self> {
         let key = std::env::var("WEBCLAW_API_KEY").ok()?;

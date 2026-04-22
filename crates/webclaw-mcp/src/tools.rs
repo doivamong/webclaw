@@ -1,5 +1,5 @@
 /// Tool parameter structs for MCP tool inputs.
-/// Each struct derives JsonSchema for automatic schema generation,
+/// Each struct derives `JsonSchema` for automatic schema generation,
 /// and Deserialize for parsing from MCP tool call arguments.
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -18,7 +18,7 @@ pub struct ScrapeParams {
     pub only_main_content: Option<bool>,
     /// Browser profile: "chrome" (default), "firefox", or "random"
     pub browser: Option<String>,
-    /// Cookies to send with the request (e.g. ["name=value", "session=abc123"])
+    /// Cookies to send with the request (e.g. `["name=value", "session=abc123"]`)
     pub cookies: Option<Vec<String>>,
 }
 
@@ -76,7 +76,7 @@ pub struct SummarizeParams {
 pub struct DiffParams {
     /// URL to fetch current content from
     pub url: String,
-    /// Previous extraction snapshot as a JSON string (ExtractionResult)
+    /// Previous extraction snapshot as a JSON string (`ExtractionResult`)
     pub previous_snapshot: String,
 }
 
