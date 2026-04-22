@@ -1,6 +1,3 @@
-/// Image handling for LLM output: linked image conversion, logo detection,
-/// standalone image stripping, and bare image reference removal.
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::cleanup::is_asset_label;
@@ -10,12 +7,12 @@ use super::cleanup::is_asset_label;
 // ---------------------------------------------------------------------------
 
 /// Matches `[![alt](img-url)](link-url)` -- an image wrapped in a link.
-static LINKED_IMAGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\[!\[([^\]]*)\]\([^)]+\)\]\(([^)]+)\)").unwrap());
+static LINKED_IMAGE_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\[!\[([^\]]*)\]\([^)]+\)\]\(([^)]+)\)").unwrap());
 
 /// Matches empty markdown links `[](url)` left after image stripping.
-pub(crate) static EMPTY_LINK_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\[\s*\]\([^)]+\)").unwrap());
+pub(crate) static EMPTY_LINK_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\[\s*\]\([^)]+\)").unwrap());
 
 /// Convert linked images to plain links, preserving the alt text and link target.
 /// Adds a newline after each to prevent text mashing when multiple are adjacent.
@@ -34,8 +31,8 @@ pub(crate) fn convert_linked_images(input: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Regex matching a line that is *only* a markdown image (with optional whitespace).
-static IMAGE_LINE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^!\[([^\]]*)\]\([^)]+\)\s*$").unwrap());
+static IMAGE_LINE_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^!\[([^\]]*)\]\([^)]+\)\s*$").unwrap());
 
 /// Collapse consecutive image-only lines into a comma-separated summary
 /// of their alt texts (for logo bars, partner grids, etc.).
@@ -96,7 +93,8 @@ pub(crate) fn collapse_logo_images(input: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Matches `![alt](url)` anywhere in a line, including multiple on the same line.
-static INLINE_IMAGE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]+\)").unwrap());
+static INLINE_IMAGE_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]+\)").unwrap());
 
 /// Strip inline images. For multi-image lines, separate short alts (logos)
 /// from long alts (descriptive) so they don't get mixed together.
@@ -196,7 +194,7 @@ pub(crate) fn strip_bare_image_refs(input: &str) -> String {
 }
 
 /// A line is a bare image reference if it's a single token ending with an image extension.
-/// Catches filenames ("hero.webp") and URLs ("https://cdn.example.com/logo.svg").
+/// Catches filenames ("hero.webp") and URLs ("<https://cdn.example.com/logo.svg>").
 fn is_bare_image_ref(line: &str) -> bool {
     if line.starts_with('#')
         || line.starts_with("- ")

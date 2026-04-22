@@ -1,19 +1,14 @@
-/// Extract content from JSON data islands embedded in `<script>` tags.
-///
-/// Many modern SPAs (React, Next.js, Nuxt) ship server-rendered page data
-/// as JSON inside script tags rather than in visible DOM elements. This module
-/// walks those JSON blobs and recovers text content as a fallback when normal
-/// DOM extraction yields sparse results.
-use once_cell::sync::Lazy;
+use std::fmt::Write as _;
+
 use scraper::{Html, Selector};
 use tracing::debug;
 
-static SCRIPT_JSON_SELECTOR: Lazy<Selector> =
-    Lazy::new(|| Selector::parse("script[type='application/json']").unwrap());
+static SCRIPT_JSON_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("script[type='application/json']").unwrap());
 
 /// Below this word count, try data islands for supplemental content.
 /// Set high enough to cover marketing homepages with partial SSR (e.g., Notion
-/// SSR-renders ~300 words but has ~800 words in __NEXT_DATA__).
+/// SSR-renders ~300 words but has ~800 words in __`NEXT_DATA`__).
 const SPARSE_THRESHOLD: usize = 500;
 
 /// Cap total extracted chunks to bound memory and CPU on adversarial inputs.
@@ -28,7 +23,7 @@ struct TextChunk {
 
 /// Try to extract content from JSON data islands when DOM extraction is sparse.
 /// Deduplicates against existing markdown so we only add genuinely new content.
-/// Handles: application/json script tags, SvelteKit kit.start() data, and
+/// Handles: application/json script tags, `SvelteKit` `kit.start()` data, and
 /// other inline JS data patterns.
 pub fn try_extract(doc: &Html, dom_word_count: usize, existing_markdown: &str) -> Option<String> {
     if dom_word_count >= SPARSE_THRESHOLD {
@@ -102,7 +97,7 @@ pub fn try_extract(doc: &Html, dom_word_count: usize, existing_markdown: &str) -
     let mut md = String::new();
     for chunk in &all_chunks {
         if let Some(ref h) = chunk.heading {
-            md.push_str(&format!("\n## {h}\n\n"));
+            let _ = write!(md, "\n## {h}\n\n");
         }
         md.push_str(&chunk.body);
         md.push_str("\n\n");

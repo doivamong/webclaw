@@ -2,7 +2,6 @@
 /// for the LLM output's deduplicated links section.
 use std::collections::HashSet;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 // ---------------------------------------------------------------------------
@@ -10,7 +9,8 @@ use regex::Regex;
 // ---------------------------------------------------------------------------
 
 /// Matches `[text](url)`. Images are already stripped, so no `!` prefix concern.
-static LINK_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap());
+static LINK_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap());
 
 /// Extract all links from markdown, replacing inline `[text](url)` with just `text`.
 /// Returns the cleaned text and a deduplicated list of (label, href) pairs.
@@ -85,8 +85,8 @@ fn is_noise_link(text: &str, href: &str) -> bool {
 // Link label cleaning
 // ---------------------------------------------------------------------------
 
-static MD_MARKERS_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"#{1,6}\s+|\*{1,2}|_{1,2}|`").unwrap());
+static MD_MARKERS_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"#{1,6}\s+|\*{1,2}|_{1,2}|`").unwrap());
 
 /// Clean a link label: strip markdown, dedup repeated phrases, truncate.
 pub(crate) fn clean_link_label(raw: &str) -> String {

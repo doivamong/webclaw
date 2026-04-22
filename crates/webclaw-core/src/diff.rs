@@ -33,11 +33,14 @@ pub struct ContentDiff {
 
 /// Compare two extraction results and produce a diff.
 /// `old` is the previous snapshot, `new_result` is the current extraction.
+#[must_use]
 pub fn diff(old: &ExtractionResult, new_result: &ExtractionResult) -> ContentDiff {
     let text_diff = compute_text_diff(&old.content.markdown, &new_result.content.markdown);
     let metadata_changes = compute_metadata_changes(&old.metadata, &new_result.metadata);
     let (links_added, links_removed) =
         compute_link_changes(&old.content.links, &new_result.content.links);
+    // word_count is a reasonable usize; cast to i64 is safe on 64-bit targets.
+    #[allow(clippy::cast_possible_wrap)]
     let word_count_delta = new_result.metadata.word_count as i64 - old.metadata.word_count as i64;
 
     let status = if text_diff.is_none() && metadata_changes.is_empty() {

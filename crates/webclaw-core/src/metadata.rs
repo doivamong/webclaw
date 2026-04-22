@@ -4,11 +4,11 @@ use scraper::{Html, Selector};
 
 use crate::types::Metadata;
 
-/// Selectors are cheap to compile but we call them often — cache with once_cell.
+/// Selectors are cheap to compile but we call them often — cache with `once_cell`.
 macro_rules! selector {
     ($s:expr) => {{
-        use once_cell::sync::Lazy;
-        static SEL: Lazy<Selector> = Lazy::new(|| Selector::parse($s).unwrap());
+        static SEL: std::sync::LazyLock<Selector> =
+            std::sync::LazyLock::new(|| Selector::parse($s).unwrap());
         &*SEL
     }};
 }
@@ -34,7 +34,7 @@ pub fn extract(doc: &Html, url: Option<&str>) -> Metadata {
         .select(selector!("html"))
         .next()
         .and_then(|el| el.value().attr("lang"))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let site_name = og_meta(doc, "og:site_name");
     let image = og_meta(doc, "og:image").or_else(|| meta_name(doc, "twitter:image"));
@@ -90,7 +90,7 @@ fn extract_favicon(doc: &Html) -> Option<String> {
     doc.select(selector!("link[rel]"))
         .find(|el| el.value().attr("rel").is_some_and(|r| r.contains("icon")))
         .and_then(|el| el.value().attr("href"))
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 #[cfg(test)]

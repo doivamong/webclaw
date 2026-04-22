@@ -1,18 +1,12 @@
-/// QuickJS-based extraction of data from inline JavaScript in HTML pages.
-///
-/// Many modern websites embed page data as JavaScript variable assignments
-/// (e.g., `window.__PRELOADED_STATE__`, Next.js `self.__next_f`). The static
-/// JSON data island approach (`data_island.rs`) only handles `<script type="application/json">`.
-/// This module executes inline `<script>` tags in a sandboxed QuickJS runtime
-/// to capture those JS-assigned data blobs.
-use once_cell::sync::Lazy;
 use regex::Regex;
 use rquickjs::{Context, Runtime};
 use scraper::{Html, Selector};
 use tracing::debug;
 
-static SCRIPT_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("script").unwrap());
-static HTML_TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]+>").unwrap());
+static SCRIPT_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("script").unwrap());
+static HTML_TAG_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
 
 /// A blob of data extracted from JS execution.
 pub struct JsDataBlob {
@@ -21,7 +15,14 @@ pub struct JsDataBlob {
     pub size: usize,
 }
 
-/// Execute inline `<script>` tags in a QuickJS sandbox and extract `window.__*` data.
+/// Execute inline `<script>` tags in a `QuickJS` sandbox and extract `window.__*` data.
+///
+/// # Panics
+///
+/// Internal `.unwrap()` calls assume the global object has `Object.keys` available — all
+/// sane `QuickJS` runtimes provide it. A panic here would indicate a corrupt build.
+#[must_use]
+#[allow(clippy::too_many_lines)] // QuickJS setup + extraction loop is one coherent pipeline
 pub fn extract_js_data(html: &str) -> Vec<JsDataBlob> {
     let doc = Html::parse_document(html);
 
@@ -197,6 +198,7 @@ struct RawBlob {
 ///
 /// Walks each blob's JSON looking for human-readable strings, filters out
 /// URLs/paths/CSS/base64, deduplicates, and joins into a single section.
+#[must_use]
 pub fn extract_readable_text(blobs: &[JsDataBlob]) -> String {
     let mut texts: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -311,7 +313,7 @@ fn filter_readable(s: &str) -> Option<String> {
 
     // Skip CSS grid area names and layout tokens.
     // These are strings of short lowercase words/dots with no sentence structure.
-    if !s.chars().any(|c| c.is_uppercase()) {
+    if !s.chars().any(char::is_uppercase) {
         let is_css_layout = s.split_whitespace().all(|w| {
             w == "."
                 || (w.len() <= 20
@@ -325,7 +327,7 @@ fn filter_readable(s: &str) -> Option<String> {
 
     // Skip CSS dimension strings (e.g. "16px 0px 0px 0px")
     if s.split_whitespace().all(|w| {
-        w.ends_with("px") || w.ends_with("em") || w.ends_with("rem") || w.ends_with("%") || w == "0"
+        w.ends_with("px") || w.ends_with("em") || w.ends_with("rem") || w.ends_with('%') || w == "0"
     }) {
         return None;
     }
@@ -343,15 +345,18 @@ fn filter_readable(s: &str) -> Option<String> {
         }
     }
 
-    // Skip strings ending with file extensions
-    if s.ends_with(".js")
-        || s.ends_with(".css")
-        || s.ends_with(".png")
-        || s.ends_with(".jpg")
-        || s.ends_with(".svg")
-        || s.ends_with(".woff2")
+    // Skip strings ending with file extensions. Asset URLs are canonical-lowercase on web.
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
     {
-        return None;
+        if s.ends_with(".js")
+            || s.ends_with(".css")
+            || s.ends_with(".png")
+            || s.ends_with(".jpg")
+            || s.ends_with(".svg")
+            || s.ends_with(".woff2")
+        {
+            return None;
+        }
     }
 
     // Must be mostly alphabetic (spaces + letters should dominate)

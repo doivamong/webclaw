@@ -2,9 +2,9 @@
 /// Walks the DOM tree and emits clean markdown, resolving relative URLs
 /// against the provided base URL when available.
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use ego_tree::NodeId;
-use once_cell::sync::Lazy;
 use scraper::node::Node;
 use scraper::{ElementRef, Selector};
 use url::Url;
@@ -12,7 +12,8 @@ use url::Url;
 use crate::noise;
 use crate::types::{CodeBlock, Image, Link};
 
-static CODE_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("code").unwrap());
+static CODE_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("code").unwrap());
 
 /// Collected assets found during conversion.
 pub struct ConvertedAssets {
@@ -22,7 +23,9 @@ pub struct ConvertedAssets {
 }
 
 /// Convert an element subtree to markdown + plain text.
-/// Elements whose NodeId is in `exclude` (and their descendants) are skipped.
+/// Elements whose `NodeId` is in `exclude` (and their descendants) are skipped.
+#[must_use]
+#[allow(clippy::implicit_hasher)] // only ever called with the default hasher
 pub fn convert(
     element: ElementRef<'_>,
     base_url: Option<&Url>,
@@ -43,6 +46,7 @@ pub fn convert(
 }
 
 /// Recursive descent through the DOM, emitting markdown for each node.
+#[allow(clippy::too_many_lines)] // HTML-tag dispatch is naturally long
 fn node_to_md(
     element: ElementRef<'_>,
     base_url: Option<&Url>,
@@ -152,14 +156,14 @@ fn node_to_md(
                 src
             };
 
-            if !src.is_empty() {
+            if src.is_empty() {
+                String::new()
+            } else {
                 assets.images.push(Image {
                     alt: alt.clone(),
                     src: src.clone(),
                 });
                 format!("![{alt}]({src})")
-            } else {
-                String::new()
             }
         }
 
@@ -449,7 +453,7 @@ fn list_items(
                     .split_whitespace()
                     .collect::<Vec<_>>()
                     .join(" ");
-                out.push_str(&format!("{indent}{bullet} {text}\n"));
+                let _ = writeln!(out, "{indent}{bullet} {text}");
 
                 if !nested_lists.is_empty() {
                     out.push_str(&nested_lists);
@@ -503,7 +507,7 @@ fn table_to_md(
     }
 
     // Find max column count
-    let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let cols = rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
     if cols == 0 {
         return String::new();
     }
@@ -529,7 +533,7 @@ fn table_to_md(
     out.push_str(" |\n");
 
     // Data rows (skip first if it was a header)
-    let start = if has_header { 1 } else { 0 };
+    let start = usize::from(has_header);
     for row in &rows[start..] {
         out.push_str("| ");
         out.push_str(&row.join(" | "));
@@ -712,6 +716,7 @@ fn collect_assets_from_noise(
     }
 }
 
+#[must_use]
 pub fn resolve_url(href: &str, base_url: Option<&Url>) -> String {
     // Absolute URLs pass through
     if href.starts_with("http://") || href.starts_with("https://") || href.starts_with("//") {
@@ -775,20 +780,26 @@ fn collapse_whitespace(s: &str) -> String {
     result.trim().to_string()
 }
 
-/// Crude markdown stripping for plain_text output.
+/// Crude markdown stripping for `plain_text` output.
 fn strip_markdown(md: &str) -> String {
-    use once_cell::sync::Lazy;
     use regex::Regex;
 
-    static LINK_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").unwrap());
-    static IMG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]*\)").unwrap());
-    static BOLD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*([^*]+)\*\*").unwrap());
-    static ITALIC_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
-    static CODE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"`([^`]+)`").unwrap());
-    static HEADING_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^#{1,6}\s+").unwrap());
+    static LINK_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").unwrap());
+    static IMG_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]*\)").unwrap());
+    static BOLD_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\*\*([^*]+)\*\*").unwrap());
+    static ITALIC_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
+    static CODE_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"`([^`]+)`").unwrap());
+    static HEADING_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s+").unwrap());
     // Table separator rows: | --- | --- | (with optional colons for alignment)
-    static TABLE_SEP_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|$").unwrap());
+    static TABLE_SEP_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|$").unwrap()
+    });
 
     let s = IMG_RE.replace_all(md, "$1");
     let s = LINK_RE.replace_all(&s, "$1");
@@ -816,7 +827,7 @@ fn strip_markdown(md: &str) -> String {
         // Convert table data rows: strip leading/trailing pipes, replace inner pipes with tabs
         if trimmed.starts_with('|') && trimmed.ends_with('|') {
             let inner = &trimmed[1..trimmed.len() - 1];
-            let cells: Vec<&str> = inner.split('|').map(|c| c.trim()).collect();
+            let cells: Vec<&str> = inner.split('|').map(str::trim).collect();
             lines.push(cells.join("\t"));
             continue;
         }

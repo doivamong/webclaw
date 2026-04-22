@@ -16,6 +16,7 @@ pub enum DomainType {
 }
 
 /// Detect domain type from URL patterns first, then fall back to DOM heuristics.
+#[must_use]
 pub fn detect(url: Option<&str>, html: &str) -> DomainType {
     if let Some(url) = url
         && let Some(dt) = detect_from_url(url)

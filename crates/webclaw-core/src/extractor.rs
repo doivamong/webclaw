@@ -2,9 +2,9 @@
 /// Strips noise (nav, ads, sidebars), scores remaining nodes by text density
 /// and structural signals, then converts the best candidate to markdown.
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use ego_tree::NodeId;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 use tracing::{debug, warn};
@@ -14,35 +14,43 @@ use crate::markdown;
 use crate::noise;
 use crate::types::{Content, ExtractionOptions, Link};
 
-static CANDIDATE_SELECTOR: Lazy<Selector> =
-    Lazy::new(|| Selector::parse("article, main, [role='main'], div, section, td").unwrap());
-static BODY_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("body").unwrap());
-static H1_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("h1").unwrap());
-static H2_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("h2").unwrap());
-static P_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("p").unwrap());
-static A_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
-static ANNOUNCEMENT_SELECTOR: Lazy<Selector> =
-    Lazy::new(|| Selector::parse("[role='region'][aria-label]").unwrap());
-static FOOTER_SELECTOR: Lazy<Selector> = Lazy::new(|| Selector::parse("footer").unwrap());
-static FOOTER_HEADING_SELECTOR: Lazy<Selector> =
-    Lazy::new(|| Selector::parse("h2, h3, h4, h5, h6").unwrap());
+static CANDIDATE_SELECTOR: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("article, main, [role='main'], div, section, td").unwrap()
+});
+static BODY_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("body").unwrap());
+static H1_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h1").unwrap());
+static H2_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h2").unwrap());
+static P_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("p").unwrap());
+static A_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("a").unwrap());
+static ANNOUNCEMENT_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("[role='region'][aria-label]").unwrap());
+static FOOTER_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("footer").unwrap());
+static FOOTER_HEADING_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h2, h3, h4, h5, h6").unwrap());
 
-/// Selector for only_main_content: article, main, [role="main"]
-static MAIN_CONTENT_SELECTOR: Lazy<Selector> =
-    Lazy::new(|| Selector::parse("article, main, [role='main']").unwrap());
+/// Selector for `only_main_content`: article, main, [role="main"]
+static MAIN_CONTENT_SELECTOR: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("article, main, [role='main']").unwrap());
 
 const MAX_SELECTORS: usize = 100;
 
 /// CJK sentence-ending punctuation. Used as a proxy for "sentence count" in
-/// score_node() — the default score heuristics count only Latin punctuation
+/// `score_node()` — the default score heuristics count only Latin punctuation
 /// (`.!?`) which undercounts Japanese/Chinese/Korean articles.
 ///
-/// Adapted from github.com/spider-rs/readability (MIT) — PUNCTUATIONS_REGEX
+/// Adapted from github.com/spider-rs/readability (MIT) — `PUNCTUATIONS_REGEX`
 /// idea. Regex simplified to CJK-only here; Latin punctuation already handled
-/// by score_node text_len heuristics.
-static CJK_PUNCTUATIONS: Lazy<Regex> = Lazy::new(|| Regex::new(r"[、。，．！？]").unwrap());
+/// by `score_node` `text_len` heuristics.
+static CJK_PUNCTUATIONS: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"[、。，．！？]").unwrap());
 
-/// Build a HashSet of NodeIds to exclude based on CSS selector strings.
+/// Build a `HashSet` of `NodeIds` to exclude based on CSS selector strings.
 /// Invalid selectors are skipped with a warning.
 fn build_exclude_set(doc: &Html, selectors: &[String]) -> HashSet<NodeId> {
     if selectors.len() > MAX_SELECTORS {
@@ -518,7 +526,7 @@ fn recover_footer_cta(
             }
 
             debug!(heading = h2_text.as_str(), "recovered footer CTA heading");
-            markdown.push_str(&format!("\n\n## {h2_text}\n\n"));
+            let _ = write!(markdown, "\n\n## {h2_text}\n\n");
         }
 
         // Recover links that point to documentation or app URLs
@@ -546,7 +554,7 @@ fn recover_footer_cta(
                     href = href.as_str(),
                     "recovered footer CTA link"
                 );
-                markdown.push_str(&format!("[{text}]({href})\n\n"));
+                let _ = write!(markdown, "[{text}]({href})\n\n");
                 links.push(Link {
                     text: text.clone(),
                     href: href.clone(),
@@ -596,7 +604,7 @@ fn recover_footer_sitemap(
         let mut sitemap = String::from("\n\n---\n\n");
         for (heading, cat_links) in &categories {
             let names: Vec<&str> = cat_links.iter().map(|(t, _)| t.as_str()).collect();
-            sitemap.push_str(&format!("**{heading}**: {}\n", names.join(", ")));
+            let _ = writeln!(sitemap, "**{heading}**: {}", names.join(", "));
 
             for (text, href) in cat_links {
                 links.push(Link {
@@ -786,8 +794,7 @@ fn score_node(el: ElementRef<'_>) -> f64 {
     // Bonus for <article> or <main> — these are strong semantic signals
     let tag = el.value().name();
     match tag {
-        "article" => score += 50.0,
-        "main" => score += 50.0,
+        "article" | "main" => score += 50.0,
         _ => {}
     }
 
@@ -864,7 +871,8 @@ fn score_node(el: ElementRef<'_>) -> f64 {
     score
 }
 
-/// Count words in text (for word_count metadata).
+/// Count words in text (for `word_count` metadata).
+#[must_use]
 pub fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }

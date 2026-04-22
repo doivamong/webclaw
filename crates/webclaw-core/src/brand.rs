@@ -4,7 +4,6 @@
 /// No network calls, no LLM — WASM-safe.
 use std::collections::HashMap;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use scraper::{Html, Selector};
 use serde::Serialize;
@@ -39,7 +38,7 @@ pub struct LogoVariant {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BrandIdentity {
-    /// Brand name extracted from og:site_name, application-name, or <title>.
+    /// Brand name extracted from `og:site_name`, application-name, or <title>.
     pub name: Option<String>,
     pub colors: Vec<BrandColor>,
     pub fonts: Vec<String>,
@@ -57,35 +56,37 @@ pub struct BrandIdentity {
 // ---------------------------------------------------------------------------
 
 /// Matches CSS declarations with a property and value, e.g. `color: #fff;`
-static CSS_DECL: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)([\w-]+)\s*:\s*([^;}{]+)").unwrap());
+static CSS_DECL: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"(?i)([\w-]+)\s*:\s*([^;}{]+)").unwrap());
 
 /// Matches hex colors: #RGB or #RRGGBB
-static HEX_COLOR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"#([0-9a-fA-F]{3})\b|#([0-9a-fA-F]{6})\b").unwrap());
+static HEX_COLOR: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"#([0-9a-fA-F]{3})\b|#([0-9a-fA-F]{6})\b").unwrap());
 
 /// Matches rgb(r, g, b)
-static RGB_COLOR: Lazy<Regex> = Lazy::new(|| {
+static RGB_COLOR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)").unwrap()
 });
 
 /// Matches rgba(r, g, b, a)
-static RGBA_COLOR: Lazy<Regex> = Lazy::new(|| {
+static RGBA_COLOR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*[\d.]+\s*\)").unwrap()
 });
 
 /// Matches hsl(h, s%, l%)
-static HSL_COLOR: Lazy<Regex> = Lazy::new(|| {
+static HSL_COLOR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)hsla?\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*(?:,\s*[\d.]+\s*)?\)")
         .unwrap()
 });
 
 /// Matches font-family values
-static FONT_FAMILY: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)font-family\s*:\s*([^;}{]+)").unwrap());
+static FONT_FAMILY: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"(?i)font-family\s*:\s*([^;}{]+)").unwrap());
 
 macro_rules! selector {
     ($s:expr) => {{
-        static SEL: Lazy<Selector> = Lazy::new(|| Selector::parse($s).unwrap());
+        static SEL: std::sync::LazyLock<Selector> =
+            std::sync::LazyLock::new(|| Selector::parse($s).unwrap());
         &*SEL
     }};
 }
@@ -98,6 +99,7 @@ macro_rules! selector {
 ///
 /// `html` -- raw HTML string
 /// `url`  -- optional base URL for resolving relative paths
+#[must_use]
 pub fn extract_brand(html: &str, url: Option<&str>) -> BrandIdentity {
     let doc = Html::parse_document(html);
     let base_url = url.and_then(|u| Url::parse(u).ok());
@@ -177,7 +179,7 @@ fn collect_css(doc: &Html) -> Vec<CssDecl> {
         {
             decls.push(CssDecl {
                 property: "font-family".to_string(),
-                value: format!("\"{}\"", font_name),
+                value: format!("\"{font_name}\""),
             });
         }
     }
@@ -190,7 +192,7 @@ fn collect_css(doc: &Html) -> Vec<CssDecl> {
             for font in extract_google_fonts_from_url(href) {
                 decls.push(CssDecl {
                     property: "font-family".to_string(),
-                    value: format!("\"{}\"", font),
+                    value: format!("\"{font}\""),
                 });
             }
         }
@@ -209,7 +211,8 @@ fn parse_declarations(css_text: &str, out: &mut Vec<CssDecl>) {
 
 /// Extract CSS custom properties that look like color values.
 /// e.g., `--primary: #3b82f6;` or `--brand-bg: rgb(30, 41, 59);`
-static CSS_VAR: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)--([\w-]+)\s*:\s*([^;}{]+)").unwrap());
+static CSS_VAR: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"(?i)--([\w-]+)\s*:\s*([^;}{]+)").unwrap());
 
 fn parse_css_variables(css_text: &str, out: &mut Vec<CssDecl>) {
     for cap in CSS_VAR.captures_iter(css_text) {
@@ -245,7 +248,7 @@ fn parse_css_variables(css_text: &str, out: &mut Vec<CssDecl>) {
 
 /// Extract Tailwind arbitrary color values from class strings.
 /// e.g., `bg-[#1a1a2e]`, `text-[#e94560]`, `border-[rgb(255,0,0)]`
-static TW_COLOR: Lazy<Regex> = Lazy::new(|| {
+static TW_COLOR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?:bg|text|border|ring|outline|shadow|accent|fill|stroke)-\[([^\]]+)\]").unwrap()
 });
 
@@ -416,8 +419,7 @@ fn extract_colors(decls: &[CssDecl]) -> Vec<BrandColor> {
             let usage = usage_map
                 .into_iter()
                 .max_by_key(|(_, c)| *c)
-                .map(|(u, _)| u)
-                .unwrap_or(ColorUsage::Unknown);
+                .map_or(ColorUsage::Unknown, |(u, _)| u);
             BrandColor {
                 hex,
                 usage,
@@ -466,6 +468,7 @@ fn classify_color_property(property: &str) -> ColorUsage {
 }
 
 /// Parse all color values from a single CSS value string.
+#[allow(clippy::many_single_char_names)] // h/s/l/r/g/b are canonical color-space names
 fn parse_colors_from_value(value: &str) -> Vec<String> {
     let mut colors = Vec::new();
 
@@ -483,7 +486,7 @@ fn parse_colors_from_value(value: &str) -> Vec<String> {
         let r: u8 = cap[1].parse().unwrap_or(0);
         let g: u8 = cap[2].parse().unwrap_or(0);
         let b: u8 = cap[3].parse().unwrap_or(0);
-        colors.push(format!("#{:02X}{:02X}{:02X}", r, g, b));
+        colors.push(format!("#{r:02X}{g:02X}{b:02X}"));
     }
 
     // rgba()
@@ -491,7 +494,7 @@ fn parse_colors_from_value(value: &str) -> Vec<String> {
         let r: u8 = cap[1].parse().unwrap_or(0);
         let g: u8 = cap[2].parse().unwrap_or(0);
         let b: u8 = cap[3].parse().unwrap_or(0);
-        colors.push(format!("#{:02X}{:02X}{:02X}", r, g, b));
+        colors.push(format!("#{r:02X}{g:02X}{b:02X}"));
     }
 
     // hsl() / hsla()
@@ -500,7 +503,7 @@ fn parse_colors_from_value(value: &str) -> Vec<String> {
         let s: f64 = cap[2].parse::<f64>().unwrap_or(0.0) / 100.0;
         let l: f64 = cap[3].parse::<f64>().unwrap_or(0.0) / 100.0;
         let (r, g, b) = hsl_to_rgb(h, s, l);
-        colors.push(format!("#{:02X}{:02X}{:02X}", r, g, b));
+        colors.push(format!("#{r:02X}{g:02X}{b:02X}"));
     }
 
     colors
@@ -517,6 +520,12 @@ fn expand_short_hex(short: &str) -> String {
 }
 
 /// Convert HSL to RGB. h in [0, 360], s and l in [0.0, 1.0].
+// Inputs are clamped to [0.0, 1.0] so the final scaled values fit in u8 without loss.
+#[allow(
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
     if s == 0.0 {
         let v = (l * 255.0).round() as u8;
@@ -600,8 +609,7 @@ fn extract_fonts(decls: &[CssDecl]) -> Vec<String> {
             // Heuristic: take everything after a `/` or after `px`/`em`/`rem`/`%` + space
             FONT_FAMILY
                 .captures(&format!("font-family: {}", &decl.value))
-                .map(|c| c[1].to_string())
-                .unwrap_or_else(|| decl.value.clone())
+                .map_or_else(|| decl.value.clone(), |c| c[1].to_string())
         } else {
             decl.value.clone()
         };
@@ -688,9 +696,10 @@ fn find_logo(doc: &Html, base_url: Option<&Url>) -> Option<String> {
         // Check if parent <a> links to homepage
         if let Some(parent) = el.parent().and_then(|p| p.value().as_element()) {
             let href = parent.attr("href").unwrap_or("");
-            if (href == "/" || href.ends_with(".com") || href.ends_with(".com/"))
-                && let Some(src) = el.value().attr("src")
-            {
+            // `.com` is canonical-case; not a file extension check.
+            #[allow(clippy::case_sensitive_file_extension_comparisons)]
+            let looks_like_home = href == "/" || href.ends_with(".com") || href.ends_with(".com/");
+            if looks_like_home && let Some(src) = el.value().attr("src") {
                 return Some(resolve_url(src, base_url));
             }
         }
@@ -719,7 +728,7 @@ fn find_favicon(doc: &Html, base_url: Option<&Url>) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// Extract brand name from metadata, with fallback chain:
-/// 1. og:site_name
+/// 1. `og:site_name`
 /// 2. <meta name="application-name">
 /// 3. <title> (cleaned up — strip " - Home", " | Official", etc.)
 fn extract_brand_name(doc: &Html) -> Option<String> {
@@ -849,9 +858,12 @@ fn find_all_logos(doc: &Html, base_url: Option<&Url>) -> Vec<LogoVariant> {
         if logos.iter().all(|l| l.kind != "svg") {
             // Try to find if the SVG is wrapped in a link to homepage
             if let Some(parent) = el.parent().and_then(|p| p.value().as_element())
-                && parent
-                    .attr("href")
-                    .is_some_and(|h| h == "/" || h.ends_with(".com") || h.ends_with(".com/"))
+                && parent.attr("href").is_some_and(|h| {
+                    // `.com` is canonical-case; not a file extension check.
+                    #[allow(clippy::case_sensitive_file_extension_comparisons)]
+                    let home = h == "/" || h.ends_with(".com") || h.ends_with(".com/");
+                    home
+                })
             {
                 logos.push(LogoVariant {
                     url: "(inline-svg)".to_string(),
@@ -898,8 +910,7 @@ fn resolve_url(src: &str, base_url: Option<&Url>) -> String {
     match base_url {
         Some(base) => base
             .join(src)
-            .map(|u| u.to_string())
-            .unwrap_or_else(|_| src.to_string()),
+            .map_or_else(|_| src.to_string(), |u| u.to_string()),
         None => src.to_string(),
     }
 }

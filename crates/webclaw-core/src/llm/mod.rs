@@ -10,6 +10,8 @@ mod images;
 mod links;
 mod metadata;
 
+use std::fmt::Write as _;
+
 use crate::types::ExtractionResult;
 
 /// Produce a token-optimized text representation of extracted content.
@@ -18,6 +20,7 @@ use crate::types::ExtractionResult;
 /// 1. Compact metadata header (`> ` prefixed lines)
 /// 2. Cleaned body (no images, no bold/italic, links as plain text)
 /// 3. Deduplicated links section at the end
+#[must_use]
 pub fn to_llm_text(result: &ExtractionResult, url: Option<&str>) -> String {
     let mut out = String::new();
 
@@ -40,7 +43,7 @@ pub fn to_llm_text(result: &ExtractionResult, url: Option<&str>) -> String {
         for (text, href) in &processed.links {
             let label = links::clean_link_label(text);
             if !label.is_empty() {
-                out.push_str(&format!("- {label}: {href}\n"));
+                let _ = writeln!(out, "- {label}: {href}");
             }
         }
     }

@@ -271,6 +271,7 @@ fn has_noise_class(class: &str) -> bool {
 /// Check if a single class token is a noise indicator.
 /// Requires the noise pattern to be the *semantic core* of the token,
 /// not embedded inside a Tailwind utility prefix or CSS variable.
+#[allow(clippy::items_after_statements)] // keep Tailwind-prefix tables next to their consumer
 fn is_noise_token(token: &str) -> bool {
     let t = token.to_lowercase();
 

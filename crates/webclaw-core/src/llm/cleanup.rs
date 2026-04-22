@@ -1,6 +1,5 @@
-/// Whitespace cleanup, HTML entity decoding, invisible Unicode stripping,
-/// leaked JS removal, CSS artifact filtering, and text-level noise removal.
-use once_cell::sync::Lazy;
+use std::fmt::Write as _;
+
 use regex::Regex;
 
 use crate::noise;
@@ -14,14 +13,16 @@ use crate::noise;
 /// HTML parsers decode entities in text nodes, but double-encoded entities
 /// (e.g., `&amp;nbsp;` -> `&nbsp;` after first parse) and entities in
 /// attribute-derived text can leak through.
+#[allow(clippy::items_after_statements)] // static regex stays next to its consumer
 pub(crate) fn decode_html_entities(input: &str) -> String {
     // Fast path: no ampersands means nothing to decode
     if !input.contains('&') {
         return input.to_string();
     }
 
-    static ENTITY_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);").unwrap());
+    static ENTITY_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);").unwrap()
+    });
 
     ENTITY_RE
         .replace_all(input, |caps: &regex::Captures| {
@@ -45,14 +46,12 @@ pub(crate) fn decode_html_entities(input: &str) -> String {
                 s if s.starts_with("#x") || s.starts_with("#X") => u32::from_str_radix(&s[2..], 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| caps[0].to_string()),
+                    .map_or_else(|| caps[0].to_string(), |c| c.to_string()),
                 s if s.starts_with('#') => s[1..]
                     .parse::<u32>()
                     .ok()
                     .and_then(char::from_u32)
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| caps[0].to_string()),
+                    .map_or_else(|| caps[0].to_string(), |c| c.to_string()),
                 _ => caps[0].to_string(), // unknown entity -- leave as-is
             }
         })
@@ -111,7 +110,8 @@ pub(crate) fn strip_invisible_unicode(input: &str) -> String {
 /// Strip lines containing raw JavaScript that leaked from inline <script> or
 /// framework hydration code (e.g., Next.js `self.__wrap_n=...`).
 pub(crate) fn strip_leaked_js(input: &str) -> String {
-    static JS_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"self\.__\w+").unwrap());
+    static JS_PATTERN: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"self\.__\w+").unwrap());
 
     let mut out = String::with_capacity(input.len());
     let mut in_code_fence = false;
@@ -266,13 +266,16 @@ pub(crate) fn collapse_whitespace(input: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// `**text**` or `__text__`
-static BOLD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*([^*]+)\*\*|__([^_]+)__").unwrap());
+static BOLD_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\*\*([^*]+)\*\*|__([^_]+)__").unwrap());
 
 /// `*text*` -- safe to use after bold `**` is already stripped.
-static ITALIC_STAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
+static ITALIC_STAR_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
 
 /// `_text_` -- match underscores at word boundaries.
-static ITALIC_UNDER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b_([^_]+)_\b").unwrap());
+static ITALIC_UNDER_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\b_([^_]+)_\b").unwrap());
 
 /// Strip bold/italic emphasis markers, preserving code blocks.
 pub(crate) fn strip_emphasis(input: &str) -> String {
@@ -510,7 +513,7 @@ fn is_repeated_brand_list(line: &str) -> bool {
 
     let items: Vec<&str> = line
         .split(',')
-        .map(|s| s.trim())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect();
     if items.len() < 4 {
@@ -546,8 +549,9 @@ fn is_repeated_brand_list(line: &str) -> bool {
 pub(crate) fn strip_long_alt_descriptions(input: &str) -> String {
     // Inline regex for "This element contains..." descriptions embedded mid-line
     // (common on sites like cursor.com where ARIA descriptions leak into text)
-    static ELEMENT_DESC_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"This element contains [^.]*\.[^.]*\.(?:\s*[^.]*\.)*").unwrap());
+    static ELEMENT_DESC_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"This element contains [^.]*\.[^.]*\.(?:\s*[^.]*\.)*").unwrap()
+    });
 
     let mut out = String::with_capacity(input.len());
     for line in input.lines() {
@@ -564,6 +568,7 @@ pub(crate) fn strip_long_alt_descriptions(input: &str) -> String {
     out
 }
 
+#[allow(clippy::items_after_statements)] // keep the alt-prefix table next to its only consumer
 pub(crate) fn is_long_alt_description(line: &str) -> bool {
     let trimmed = line.trim();
 
@@ -604,7 +609,7 @@ pub(crate) fn is_long_alt_description(line: &str) -> bool {
 /// Strip CSS artifacts leaking into text, both standalone lines and inline.
 /// E.g., `@keyframes copy{from{background:var(--runtime)}`
 pub(crate) fn strip_css_artifacts(input: &str) -> String {
-    static CSS_INLINE_RE: Lazy<Regex> = Lazy::new(|| {
+    static CSS_INLINE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r"@(?:keyframes|font-face|media|supports|layer)\s*[^{]*\{[^}]*\}?").unwrap()
     });
 
@@ -883,11 +888,12 @@ pub(crate) fn collapse_word_lists(input: &str) -> String {
                 let dump_preview: Vec<&str> =
                     words[start_idx..start_idx + 3.min(dump_len)].to_vec();
                 if prose_part.is_empty() {
-                    out.push_str(&format!(
+                    let _ = write!(
+                        out,
                         "{} ... and {} more",
                         dump_preview.join(" "),
                         dump_len - dump_preview.len()
-                    ));
+                    );
                 } else {
                     out.push_str(&prose_part.join(" "));
                 }

@@ -4,8 +4,8 @@
 /// token-efficient LLM text. Each step is implemented in a sibling module
 /// (cleanup, images, links) -- this module just wires them together in order.
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::cleanup;
@@ -128,7 +128,8 @@ pub(crate) fn process_body(markdown: &str) -> ProcessedBody {
 // Repeated phrase dedup
 // ---------------------------------------------------------------------------
 
-static HEADING_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").unwrap());
+static HEADING_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").unwrap());
 
 /// Responsive HTML often produces "Read more Read more Read more" after link
 /// stripping. Collapse N consecutive identical phrases into one.
@@ -295,7 +296,7 @@ fn dedup_heading_paragraph(input: &str) -> String {
                     } else {
                         heading_text
                     };
-                    out.push_str(&format!("{heading_prefix} {merged}\n"));
+                    let _ = writeln!(out, "{heading_prefix} {merged}");
                     i = j + 1;
                     continue;
                 }
@@ -740,7 +741,7 @@ pub(crate) fn dedup_comma_lists(input: &str) -> String {
     input
         .lines()
         .map(|line| {
-            let items: Vec<&str> = line.split(", ").map(|s| s.trim()).collect();
+            let items: Vec<&str> = line.split(", ").map(str::trim).collect();
             if items.len() < 2 {
                 return line.to_string();
             }

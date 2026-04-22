@@ -1,10 +1,15 @@
+//! webclaw-core: Pure HTML content extraction engine for LLMs.
+//!
+//! Takes raw HTML + optional URL, returns structured content
+//! (metadata, markdown, plain text, links, images, code blocks).
+//! Zero network dependencies — WASM-compatible by design.
+
+// Scoring / heuristics throughout use usize→f64 for density & ratio math.
+// Losing sub-bit precision on counts is acceptable; it changes no observable output.
+#![allow(clippy::cast_precision_loss)]
+
 pub mod brand;
 pub(crate) mod data_island;
-/// webclaw-core: Pure HTML content extraction engine for LLMs.
-///
-/// Takes raw HTML + optional URL, returns structured content
-/// (metadata, markdown, plain text, links, images, code blocks).
-/// Zero network dependencies — WASM-compatible by design.
 pub mod diff;
 pub mod domain;
 pub mod error;
@@ -36,6 +41,10 @@ use url::Url;
 ///
 /// `html` — raw HTML string to parse
 /// `url`  — optional source URL, used for resolving relative links and domain detection
+///
+/// # Errors
+///
+/// Returns `ExtractError::NoContent` if `html` is empty or yields no usable content.
 pub fn extract(html: &str, url: Option<&str>) -> Result<ExtractionResult, ExtractError> {
     extract_with_options(html, url, &ExtractionOptions::default())
 }
@@ -45,6 +54,10 @@ pub fn extract(html: &str, url: Option<&str>) -> Result<ExtractionResult, Extrac
 /// `html`    — raw HTML string to parse
 /// `url`     — optional source URL, used for resolving relative links and domain detection
 /// `options` — controls include/exclude selectors, main content mode, and raw HTML output
+///
+/// # Errors
+///
+/// Returns `ExtractError::NoContent` if `html` is empty.
 pub fn extract_with_options(
     html: &str,
     url: Option<&str>,
@@ -207,8 +220,9 @@ pub fn extract_with_options(
 /// document first and count visible text yourself — extraction is already
 /// cheap enough (<10ms per page) that running it first is usually fine.
 ///
-/// Adapted from github.com/niklak/dom_smoothie (MIT) — `is_probably_readable`
+/// Adapted from `github.com/niklak/dom_smoothie` (MIT) — `is_probably_readable`
 /// pattern. See ATTRIBUTIONS.md.
+#[must_use]
 pub fn is_probably_readable(result: &ExtractionResult) -> bool {
     let text = &result.content.plain_text;
     let char_count = text.chars().count();

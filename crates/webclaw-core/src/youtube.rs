@@ -1,25 +1,28 @@
-use once_cell::sync::Lazy;
-/// YouTube video metadata extraction from `ytInitialPlayerResponse` embedded JSON.
+/// `YouTube` video metadata extraction from `ytInitialPlayerResponse` embedded JSON.
 ///
-/// YouTube embeds the full player config (title, author, view count, description,
+/// `YouTube` embeds the full player config (title, author, view count, description,
 /// duration, upload date) in a `<script>` tag as a JS variable assignment. This
 /// module parses that blob and formats it as structured markdown, giving LLMs a
-/// clean representation without needing the YouTube API.
+/// clean representation without needing the `YouTube` API.
+use std::fmt::Write as _;
+
 use regex::Regex;
 use tracing::debug;
 
 /// Regex to find the ytInitialPlayerResponse assignment in a <script> block.
-/// YouTube uses: `var ytInitialPlayerResponse = {...};`
-static YT_PLAYER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"var\s+ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;").unwrap());
+/// `YouTube` uses: `var ytInitialPlayerResponse = {...};`
+static YT_PLAYER_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"var\s+ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;").unwrap()
+});
 
-/// Check if a URL is a YouTube video page.
+/// Check if a URL is a `YouTube` video page.
+#[must_use]
 pub fn is_youtube_url(url: &str) -> bool {
     let lower = url.to_lowercase();
     lower.contains("youtube.com/watch") || lower.contains("youtu.be/")
 }
 
-/// Extracted YouTube video metadata.
+/// Extracted `YouTube` video metadata.
 #[derive(Debug)]
 struct VideoMeta {
     title: String,
@@ -30,7 +33,7 @@ struct VideoMeta {
     duration: String,
 }
 
-/// Try to extract YouTube video metadata from the page HTML.
+/// Try to extract `YouTube` video metadata from the page HTML.
 /// Returns structured markdown if successful, None if the page doesn't contain
 /// ytInitialPlayerResponse or parsing fails.
 pub fn try_extract(html: &str) -> Option<String> {
@@ -58,8 +61,7 @@ pub fn try_extract(html: &str) -> Option<String> {
     let view_count = video_details
         .get("viewCount")
         .and_then(|v| v.as_str())
-        .map(format_view_count)
-        .unwrap_or_else(|| "N/A".to_string());
+        .map_or_else(|| "N/A".to_string(), format_view_count);
 
     let upload_date = microformat
         .and_then(|m| m.get("uploadDate"))
@@ -175,12 +177,13 @@ pub fn extract_caption_tracks(html: &str) -> Vec<CaptionTrack> {
         .collect()
 }
 
-/// Parse YouTube timed text XML into plain transcript text.
+/// Parse `YouTube` timed text XML into plain transcript text.
 /// The XML format is: `<transcript><text start="0" dur="1.5">Hello</text>...</transcript>`
 pub fn parse_timed_text(xml: &str) -> String {
     // Simple regex-based parsing to avoid adding an XML crate dependency.
     // Extract text content between <text ...>...</text> tags.
-    static TEXT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<text[^>]*>([^<]*)</text>").unwrap());
+    static TEXT_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"<text[^>]*>([^<]*)</text>").unwrap());
 
     let mut lines: Vec<String> = Vec::new();
     for cap in TEXT_RE.captures_iter(xml) {
@@ -196,7 +199,7 @@ pub fn parse_timed_text(xml: &str) -> String {
             .replace("&quot;", "\"")
             .replace("&#39;", "'")
             .replace("&apos;", "'")
-            .replace("\n", " ");
+            .replace('\n', " ");
         lines.push(decoded);
     }
 
@@ -207,10 +210,11 @@ pub fn parse_timed_text(xml: &str) -> String {
 fn format_markdown(meta: &VideoMeta) -> String {
     let mut md = format!("# {}\n\n", meta.title);
 
-    md.push_str(&format!(
+    let _ = write!(
+        md,
         "**Channel:** {} | **Views:** {} | **Published:** {} | **Duration:** {}\n\n",
         meta.author, meta.view_count, meta.upload_date, meta.duration
-    ));
+    );
 
     if !meta.description.is_empty() {
         md.push_str("## Description\n\n");

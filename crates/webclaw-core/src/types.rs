@@ -10,7 +10,7 @@ pub struct ExtractionResult {
     pub content: Content,
     pub domain_data: Option<DomainData>,
     /// JSON-LD structured data extracted from `<script type="application/ld+json">` blocks.
-    /// Contains Schema.org markup (Product, Article, BreadcrumbList, etc.) when present.
+    /// Contains Schema.org markup (Product, Article, `BreadcrumbList`, etc.) when present.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_data: Vec<serde_json::Value>,
 }

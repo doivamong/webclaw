@@ -2,7 +2,7 @@
 ///
 /// Handles two sources:
 /// 1. JSON-LD (`<script type="application/ld+json">`) — e-commerce, news, recipes
-/// 2. SvelteKit data islands (`kit.start(app, element, { data: [...] })`) — SPAs
+/// 2. `SvelteKit` data islands (`kit.start(app, element, { data: [...] })`) — SPAs
 use serde_json::Value;
 
 /// Extract all JSON-LD blocks from raw HTML.
@@ -10,6 +10,7 @@ use serde_json::Value;
 /// Returns parsed JSON values, skipping any blocks that fail to parse.
 /// Most e-commerce sites include Schema.org Product markup with prices,
 /// sizes, availability, and images.
+#[must_use]
 pub fn extract_json_ld(html: &str) -> Vec<Value> {
     let mut results = Vec::new();
     let needle = "application/ld+json";
@@ -62,12 +63,13 @@ pub fn extract_json_ld(html: &str) -> Vec<Value> {
     results
 }
 
-/// Extract data from SvelteKit's `kit.start()` pattern.
+/// Extract data from `SvelteKit`'s `kit.start()` pattern.
 ///
-/// SvelteKit embeds page data inside:
+/// `SvelteKit` embeds page data inside:
 /// `kit.start(app, element, { data: [null, null, {"type":"data","data":{...}}] })`
 ///
 /// Returns parsed JSON objects from the data array (skipping nulls).
+#[must_use]
 pub fn extract_sveltekit(html: &str) -> Vec<Value> {
     let Some(kit_pos) = html.find("kit.start(") else {
         return Vec::new();
