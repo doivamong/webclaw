@@ -46,12 +46,7 @@ registries = []
 
 [bans]
 multiple-versions = "warn"
-# Downgraded from "deny" (wc-deps-audit SKILL.md spec) until workspace.dependencies
-# in root Cargo.toml declare explicit `version = "0.3.4"` alongside `path = ...`.
-# Currently webclaw-cli/fetch/mcp inherit path-only deps via `{ workspace = true }`,
-# which cargo-deny treats as wildcards for publishable crates. Restore to "deny"
-# once workspace deps carry versions (tracked as publish-hygiene TODO).
-wildcards = "warn"
+wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "all"
 workspace-default-features = "allow"
