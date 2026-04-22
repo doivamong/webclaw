@@ -1,0 +1,28 @@
+[package]
+name = "webclaw-bench"
+description = "Regression harness for webclaw extraction — sample from targets_1000.txt, run extract, compute heuristic metrics."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "webclaw-bench"
+path = "src/main.rs"
+
+[dependencies]
+webclaw-core = { workspace = true }
+webclaw-fetch = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = "1"
+sha2 = "0.10"
+hex = "0.4"
+scraper = "0.24"
+url = "2"
+
+[lints]
+workspace = true

@@ -12,3 +12,7 @@ proxies.txt
 !.claude/plans/templates/
 .claude/hooks/**/__pycache__/
 HANDOVER.md
+
+# webclaw-bench artifacts
+benchmarks/cache/
+benchmarks/baseline-*.json

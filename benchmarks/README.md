@@ -1,130 +1,92 @@
 # Benchmarks
 
-Extraction quality and performance benchmarks comparing webclaw against popular alternatives.
+Regression harness for webclaw extraction. Not a competitive benchmark,
+not ground-truth annotated — designed to detect extraction regression
+after cherry-picking upstream changes or modifying core logic.
 
-## Quick Run
+## Quick run
 
 ```bash
-# Run all benchmarks
+# Default 20-sample with network fetch + cache
 cargo run --release -p webclaw-bench
 
-# Run specific benchmark
-cargo run --release -p webclaw-bench -- --filter quality
-cargo run --release -p webclaw-bench -- --filter speed
+# Filter to e-commerce targets (labels contain any of nike,amazon,stockx)
+cargo run --release -p webclaw-bench -- --filter nike,amazon,stockx
+
+# 50-sample, cache-only (after a previous run populated cache)
+cargo run --release -p webclaw-bench -- --sample 50 --from-cache
+
+# Full 1000-target corpus (with cache, prepare for 10+ minutes first run)
+cargo run --release -p webclaw-bench -- --sample 0
 ```
 
-## Extraction Quality
+## Corpus
 
-Tested against 50 diverse web pages (news articles, documentation, blogs, SPAs, e-commerce).
-Each page scored on: content completeness, noise removal, link preservation, metadata accuracy.
+`targets_1000.txt` — 1000 real-world URLs labeled as `name|url|labels`,
+ported from upstream `0xMassi/webclaw` v0.4.0. Covers Nike, Amazon,
+StockX, Shopify, news, docs, SPAs, social. See `ATTRIBUTIONS.md`.
 
-| Extractor | Accuracy | Noise Removal | Links | Metadata | Avg Score |
-|-----------|----------|---------------|-------|----------|-----------|
-| **webclaw** | **94.2%** | **96.1%** | **98.3%** | **91.7%** | **95.1%** |
-| mozilla/readability | 87.3% | 89.4% | 85.1% | 72.3% | 83.5% |
-| trafilatura | 82.1% | 91.2% | 68.4% | 80.5% | 80.6% |
-| newspaper3k | 71.4% | 76.8% | 52.3% | 65.2% | 66.4% |
+## Metrics
 
-### Scoring Methodology
+Per-target:
+- `word_count` — plain text word count after extraction
+- `markdown_bytes` — size of rendered markdown
+- `extraction_ms` — extraction wall time (DOM parse + score + render)
+- `labels_matched / labels_total` — count of labels (lowercased) that
+  appear as substring in extracted plain text. Heuristic signal, not
+  strict correctness. Higher is better.
 
-- **Accuracy**: Percentage of main content extracted vs human-annotated ground truth
-- **Noise Removal**: Percentage of navigation, ads, footers, and boilerplate correctly excluded
-- **Links**: Percentage of meaningful content links preserved with correct text and href
-- **Metadata**: Correct extraction of title, author, date, description, and language
+Aggregate:
+- successes / failures
+- avg word_count
+- avg extraction_ms
+- label match rate (sum matched / sum total across all targets)
 
-### Why webclaw scores higher
+## Cache
 
-1. **Multi-signal scoring**: Combines text density, semantic HTML tags, link density penalty, and DOM depth analysis
-2. **Data island extraction**: Catches React/Next.js JSON payloads that DOM-only extractors miss
-3. **Domain-specific heuristics**: Auto-detects site type (news, docs, e-commerce, social) and adapts strategy
-4. **Noise filter**: Shared filter using ARIA roles, class/ID patterns, and structural analysis (Tailwind-safe)
+HTML cached in `benchmarks/cache/<sha256-prefix>.html` (gitignored).
+Second run on same targets hits cache, no network. Cache invalidation:
+delete the dir, or specific files by sha prefix.
 
-## Extraction Speed
+## Output
 
-Single-page extraction time (parsing + extraction, no network). Measured on M4 Pro, averaged over 1000 runs.
+JSON baseline written to `benchmarks/baseline-<unix-ts>.json` (gitignored).
+Each file is a timestamped snapshot — keep locally for comparison, not
+committed. Baseline format:
 
-| Page Size | webclaw | readability | trafilatura |
-|-----------|---------|-------------|-------------|
-| Small (10KB) | **0.8ms** | 2.1ms | 4.3ms |
-| Medium (100KB) | **3.2ms** | 8.7ms | 18.4ms |
-| Large (500KB) | **12.1ms** | 34.2ms | 72.8ms |
-| Huge (2MB) | **41.3ms** | 112ms | 284ms |
+```json
+{
+  "timestamp": "1776866389",
+  "total_run": 20, "successes": 19, "failures": 1,
+  "avg_word_count": 284.3, "avg_extraction_ms": 42.1,
+  "label_match_rate": 0.58,
+  "outcomes": [ { "name": "...", "url": "...", ... } ]
+}
+```
 
-### Why webclaw is faster
-
-1. **Rust**: No garbage collection, zero-cost abstractions, SIMD-optimized string operations
-2. **Single-pass scoring**: Content scoring happens during DOM traversal, not as a separate pass
-3. **Lazy allocation**: Markdown conversion streams output instead of building intermediate structures
-
-## LLM Token Efficiency
-
-Tokens used when feeding extraction output to Claude/GPT. Lower is better (same information, fewer tokens = cheaper).
-
-| Format | Tokens (avg) | vs Raw HTML |
-|--------|-------------|-------------|
-| Raw HTML | 4,820 | baseline |
-| webclaw markdown | 1,840 | **-62%** |
-| webclaw text | 1,620 | **-66%** |
-| **webclaw llm** | **1,590** | **-67%** |
-| readability markdown | 2,340 | -51% |
-| trafilatura text | 2,180 | -55% |
-
-The `llm` format applies a 9-step optimization pipeline: image strip, emphasis strip, link dedup, stat merge, whitespace collapse, and more.
-
-## Crawl Performance
-
-Crawling speed with concurrent extraction. Target: example documentation site (~200 pages).
-
-| Concurrency | webclaw | Crawl4AI | Scrapy |
-|-------------|---------|----------|--------|
-| 1 | 2.1 pages/s | 1.4 pages/s | 1.8 pages/s |
-| 5 | **9.8 pages/s** | 5.2 pages/s | 7.1 pages/s |
-| 10 | **18.4 pages/s** | 8.7 pages/s | 12.3 pages/s |
-| 20 | **32.1 pages/s** | 14.2 pages/s | 21.8 pages/s |
-
-## Bot Protection Bypass
-
-Success rate against common anti-bot systems (100 attempts each, via Cloud API with antibot sidecar).
-
-| Protection | webclaw | Firecrawl | Bright Data |
-|------------|---------|-----------|-------------|
-| Cloudflare Turnstile | **97%** | 62% | 94% |
-| DataDome | **91%** | 41% | 88% |
-| AWS WAF | **95%** | 78% | 92% |
-| hCaptcha | **89%** | 35% | 85% |
-| No protection | 100% | 100% | 100% |
-
-Note: Bot protection bypass requires the Cloud API with antibot sidecar. The open-source CLI detects protection and suggests using `--cloud` mode.
-
-## Running Benchmarks Yourself
+## Workflow for regression check
 
 ```bash
-# Clone the repo
-git clone https://github.com/0xMassi/webclaw.git
-cd webclaw
+# 1. Before change: record baseline
+git checkout main
+cargo run --release -p webclaw-bench -- --sample 100 --output /tmp/before.json
 
-# Run quality benchmarks (downloads test pages on first run)
-cargo run --release -p webclaw-bench -- --filter quality
+# 2. Apply change (edit, cherry-pick, merge)
 
-# Run speed benchmarks
-cargo run --release -p webclaw-bench -- --filter speed
+# 3. After change: run same sample from cache
+cargo run --release -p webclaw-bench -- --sample 100 --from-cache --output /tmp/after.json
 
-# Run token efficiency benchmarks (requires tiktoken)
-cargo run --release -p webclaw-bench -- --filter tokens
-
-# Full benchmark suite with HTML report
-cargo run --release -p webclaw-bench -- --report html
+# 4. Diff aggregates
+jq '{avg_word_count, avg_extraction_ms, label_match_rate}' /tmp/before.json /tmp/after.json
 ```
 
-## Reproducing Results
+If `label_match_rate` drops >5% or `avg_word_count` drops >10%, the change
+regressed extraction quality — investigate per-fixture outcomes.
 
-All benchmark test pages are cached in `benchmarks/fixtures/` after first download. The fixture set includes:
+## Not ground-truth
 
-- 10 news articles (NYT, BBC, Reuters, TechCrunch, etc.)
-- 10 documentation pages (Rust docs, MDN, React docs, etc.)
-- 10 blog posts (personal blogs, Medium, Substack)
-- 10 e-commerce pages (Amazon, Shopify stores)
-- 5 SPA/React pages (Next.js, Remix apps)
-- 5 edge cases (minimal HTML, huge pages, heavy JavaScript)
-
-Ground truth annotations are in `benchmarks/ground-truth/` as JSON files with manually verified content boundaries.
+This harness does NOT verify extraction correctness against human
+annotation. `labels_matched` is heuristic — a Nike PDP with labels
+`nike,air force,cart` scoring 2/3 could mean "cart" is genuinely missing
+from the extracted content, OR the checkout UI text was noise-stripped
+correctly. Use as directional signal, not absolute quality score.
