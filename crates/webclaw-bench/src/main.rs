@@ -9,6 +9,10 @@
 //! ground-truth annotation. Intended for detecting regression after
 //! cherry-picking upstream changes, not for positioning vs competitors.
 
+// Averages computed from small counter values (<10^6) — precision loss
+// from usize/u128 → f64 cast is not meaningful for this harness.
+#![allow(clippy::cast_precision_loss)]
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -328,14 +332,10 @@ fn print_report(report: &Report) {
     for o in &report.outcomes {
         let tag = if o.error.is_some() { "FAIL" } else { "ok  " };
         let cache = if o.from_cache { "cache" } else { "net  " };
-        let word = o
-            .word_count
-            .map(|w| w.to_string())
-            .unwrap_or_else(|| "-".into());
+        let word = o.word_count.map_or_else(|| "-".into(), |w| w.to_string());
         let ms = o
             .extraction_ms
-            .map(|m| m.to_string())
-            .unwrap_or_else(|| "-".into());
+            .map_or_else(|| "-".into(), |m| m.to_string());
         let lbl = match (o.labels_matched, o.labels_total) {
             (Some(m), Some(t)) => format!("{m}/{t}"),
             _ => "-".into(),
